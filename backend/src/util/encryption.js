@@ -108,9 +108,13 @@ function encodePart(value) {
   return value.toString('base64');
 }
 
-function decodePart(value, name) {
-  if (typeof value !== 'string' || value.length === 0) {
+function decodePart(value, name, allowEmpty = false) {
+  if (typeof value !== 'string' || (!allowEmpty && value.length === 0)) {
     throw new Error(`Invalid encrypted payload: missing ${name}`);
+  }
+
+  if (allowEmpty && value.length === 0) {
+    return Buffer.alloc(0);
   }
 
   const decoded = Buffer.from(value, 'base64');
@@ -137,7 +141,11 @@ function parseEnvelope(value) {
   }
 
   const [salt, iv, tag, ciphertext] = parts.map((part, index) =>
-    decodePart(part, ['salt', 'iv', 'auth tag', 'ciphertext'][index])
+    decodePart(
+      part,
+      ['salt', 'iv', 'auth tag', 'ciphertext'][index],
+      index === 3
+    )
   );
 
   if (salt.length !== SALT_LENGTH || iv.length !== IV_LENGTH || tag.length !== 16) {
