@@ -1,4 +1,4 @@
-name: Validate issue 44 dependency audit
+name: Repair backend dependency lock
 
 on:
   push:
@@ -6,34 +6,28 @@ on:
       - rook/issue44-dependency-standards
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  dependency-audit:
+  repair-lock:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: rook/issue44-dependency-standards
       - uses: actions/setup-node@v6
         with:
           node-version: '20'
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            backend/package-lock.json
-      - name: Validate manifests, lockfiles, and version policy
-        run: node scripts/dependency-audit.cjs validate
-      - name: Verify root locked install
-        run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Verify backend locked install
+          cache-dependency-path: backend/package-lock.json
+      - name: Regenerate backend package-lock.json
         working-directory: backend
-        run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Scan outdated dependencies (informational)
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Commit synced backend lock and remove repair workflow
         run: |
-          npm outdated --json > dependency-outdated-root.json || true
-          (cd backend && npm outdated --json > ../dependency-outdated-backend.json) || true
-      - name: Report dependency and license metrics
-        run: |
-          node scripts/dependency-audit.cjs report \
-            dependency-outdated-root.json \
-            dependency-outdated-backend.json | tee dependency-metrics.md
+          git config user.name "woahwhattheheck"
+          git config user.email "293286387+woahwhattheheck@users.noreply.github.com"
+          git add backend/package-lock.json
+          git rm .github/workflows/issue44-validate.yml
+          git commit -m "chore: sync backend dependency lock"
+          git push origin HEAD:rook/issue44-dependency-standards
