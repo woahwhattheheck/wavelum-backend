@@ -1,6 +1,7 @@
 const logger = require('../utils/logger');
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../database/connection');
+const { encryptField, decryptField } = require('../util/encryption');
 
 /**
  * KycStatus - Model for tracking KYC/AML verification status and expiration
@@ -149,12 +150,37 @@ const KycStatus = sequelize.define('KycStatus', {
   sep12_response_data: {
     type: DataTypes.JSON,
     allowNull: true,
-    comment: 'Raw SEP-12 API response data',
+    comment: 'Encrypted raw SEP-12 API response data',
+    set(value) {
+      if (value === null || value === undefined) {
+        this.setDataValue('sep12_response_data', value);
+        return;
+      }
+      this.setDataValue('sep12_response_data', encryptField(JSON.stringify(value)));
+    },
+    get() {
+      const stored = this.getDataValue('sep12_response_data');
+      if (stored === null || stored === undefined || typeof stored !== 'string') {
+        return stored;
+      }
+      const plaintext = decryptField(stored);
+      if (plaintext === stored) return stored;
+      return JSON.parse(plaintext);
+    },
   },
   compliance_notes: {
     type: DataTypes.TEXT,
     allowNull: true,
-    comment: 'Internal compliance notes and observations',
+    comment: 'Encrypted internal compliance notes and observations',
+    set(value) {
+      this.setDataValue(
+        'compliance_notes',
+        value === null || value === undefined ? value : encryptField(String(value))
+      );
+    },
+    get() {
+      return decryptField(this.getDataValue('compliance_notes'));
+    },
   },
   manual_review_required: {
     type: DataTypes.BOOLEAN,
