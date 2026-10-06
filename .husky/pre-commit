@@ -1,3 +1,5 @@
+set -e
+
 npx lint-staged
 
 if ! npm audit --audit-level=high --prefix backend; then
