@@ -57,7 +57,9 @@ jobs:
     name: "Lint & Static Analysis"
     runs-on: ubuntu-latest
     needs: pipeline-clock
-    timeout-minutes: 2
+    # One-minute hard-stop runway lets the explicit 2m SLA reporter emit a
+    # useful violation before GitHub cancels a pathologically stuck job.
+    timeout-minutes: 3
     steps:
       - name: Record lint SLA start
         id: sla_start
@@ -96,13 +98,17 @@ jobs:
             echo "- Duration: ${elapsed}s"
             echo "- Target: <120s"
           } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$elapsed" -ge 120 ]; then
+            echo "::error title=Lint SLA exceeded::Lint took ${elapsed}s; target is <120s."
+            exit 1
+          fi
 
   # ── Stage 2: Unit Tests ──────────────────────────────────────────────────────
   unit-tests:
     name: "Backend Unit Tests"
     runs-on: ubuntu-latest
     needs: lint
-    timeout-minutes: 5
+    timeout-minutes: 6
 
     services:
       postgres:
@@ -197,6 +203,10 @@ jobs:
             echo "- Duration: ${elapsed}s"
             echo "- Target: <300s"
           } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$elapsed" -ge 300 ]; then
+            echo "::error title=Unit-test SLA exceeded::Unit tests took ${elapsed}s; target is <300s."
+            exit 1
+          fi
 
   # ── Detect whether the smart contracts changed ───────────────────────────────
   changes:
@@ -220,7 +230,7 @@ jobs:
     name: "Soroban Smart Contract Tests"
     runs-on: ubuntu-latest
     needs: [lint, changes]
-    timeout-minutes: 10
+    timeout-minutes: 11
     # Skip the contract suite on pull requests that don't touch contracts/
     # (e.g. backend-only PRs) and when manually dispatched with
     # skip_contracts=true. Non-PR events still run it. Downstream jobs already
@@ -297,13 +307,17 @@ jobs:
             echo "- Duration: ${elapsed}s"
             echo "- Target: <600s"
           } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$elapsed" -ge 600 ]; then
+            echo "::error title=Contract-test SLA exceeded::Contract tests took ${elapsed}s; target is <600s."
+            exit 1
+          fi
 
   # ── Stage 4: E2E Tests (Playwright API user journey) ─────────────────────────
   e2e-tests:
     name: "E2E User Journey (Playwright)"
     runs-on: ubuntu-latest
     needs: [unit-tests, contract-tests]
-    timeout-minutes: 15
+    timeout-minutes: 16
     # Run e2e even if contract-tests was skipped
     if: |
       always() &&
@@ -391,6 +405,10 @@ jobs:
             echo "- Duration: ${elapsed}s"
             echo "- Target: <900s"
           } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$elapsed" -ge 900 ]; then
+            echo "::error title=E2E SLA exceeded::E2E tests took ${elapsed}s; target is <900s."
+            exit 1
+          fi
 
   # ── Stage 5: Green Light Gate ─────────────────────────────────────────────────
   green-light:
@@ -450,9 +468,13 @@ jobs:
     if: |
       always() && (
         needs.lint.result == 'failure' ||
+        needs.lint.result == 'cancelled' ||
         needs.unit-tests.result == 'failure' ||
+        needs.unit-tests.result == 'cancelled' ||
         needs.contract-tests.result == 'failure' ||
-        needs.e2e-tests.result == 'failure'
+        needs.contract-tests.result == 'cancelled' ||
+        needs.e2e-tests.result == 'failure' ||
+        needs.e2e-tests.result == 'cancelled'
       )
 
     steps:
