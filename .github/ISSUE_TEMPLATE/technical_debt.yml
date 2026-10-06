@@ -1,0 +1,34 @@
+name: Technical debt
+description: Track maintainability, architecture, tooling, or reliability debt.
+title: "[Tech Debt]: "
+body:
+  - type: input
+    id: area
+    attributes:
+      label: Area of debt
+      description: Identify the component, service, workflow, or subsystem.
+      placeholder: backend/src/services/payments
+    validations:
+      required: true
+  - type: textarea
+    id: current_state
+    attributes:
+      label: Current state
+      description: What makes the current implementation costly, fragile, or difficult to maintain?
+    validations:
+      required: true
+  - type: textarea
+    id: desired_state
+    attributes:
+      label: Desired state
+      description: What should be true when this debt is resolved?
+    validations:
+      required: true
+  - type: input
+    id: effort
+    attributes:
+      label: Effort estimate
+      description: Give a rough implementation estimate or sizing with assumptions.
+      placeholder: 1-2 days, Medium, or 3 engineer-days
+    validations:
+      required: true

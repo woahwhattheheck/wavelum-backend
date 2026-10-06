@@ -1,0 +1,36 @@
+name: Feature request
+description: Propose a user, operator, or developer-facing improvement.
+title: "[Feature]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What problem or limitation should this feature address?
+      placeholder: Describe the affected workflow and why the current behavior is insufficient.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe the outcome or behavior you would like to see.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What other approaches or workarounds did you consider?
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Impact priority
+      description: How urgent or impactful is this request?
+      options:
+        - Critical
+        - High
+        - Medium
+        - Low
+    validations:
+      required: true

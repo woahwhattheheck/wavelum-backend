@@ -1,0 +1,48 @@
+name: Validate issue templates
+
+on:
+  pull_request:
+    paths:
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/workflows/validate-issue-templates.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/workflows/validate-issue-templates.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-templates:
+    name: Validate required issue templates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required template files
+        shell: bash
+        run: |
+          required=(
+            .github/ISSUE_TEMPLATE/bug_report.yml
+            .github/ISSUE_TEMPLATE/feature_request.yml
+            .github/ISSUE_TEMPLATE/technical_debt.yml
+            .github/ISSUE_TEMPLATE/config.yml
+          )
+          for template in "${required[@]}"; do
+            if [[ ! -f "$template" ]]; then
+              echo "Missing required issue template: $template"
+              exit 1
+            fi
+          done
+
+      - name: Validate YAML syntax
+        run: >-
+          ruby -ryaml -e
+          'ARGV.each { |path| YAML.safe_load_file(path, aliases: true); puts "valid: #{path}" }'
+          .github/ISSUE_TEMPLATE/bug_report.yml
+          .github/ISSUE_TEMPLATE/feature_request.yml
+          .github/ISSUE_TEMPLATE/technical_debt.yml
+          .github/ISSUE_TEMPLATE/config.yml
