@@ -38,6 +38,57 @@ env:
 # ─────────────────────────────────────────────────────────────────────────────
 jobs:
 
+  dependency-audit:
+    name: "Dependency Lock & Audit"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+
+      - name: Validate manifests, lockfiles, and version policy
+        run: node scripts/dependency-audit.cjs validate
+
+      - name: Verify root locked install
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Verify backend locked install
+        working-directory: backend
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Scan outdated dependencies (informational)
+        continue-on-error: true
+        run: |
+          npm outdated --json > dependency-outdated-root.json || true
+          (cd backend && npm outdated --json > ../dependency-outdated-backend.json) || true
+
+      - name: Report dependency and license metrics
+        run: |
+          node scripts/dependency-audit.cjs report \
+            dependency-outdated-root.json \
+            dependency-outdated-backend.json | tee dependency-metrics.md
+          cat dependency-metrics.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload dependency audit reports
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: dependency-audit
+          path: |
+            dependency-metrics.md
+            dependency-outdated-root.json
+            dependency-outdated-backend.json
+          if-no-files-found: warn
+          retention-days: 7
+
   # ── Stage 1: Lint ────────────────────────────────────────────────────────────
   lint:
     name: "Lint & Static Analysis"
@@ -307,9 +358,10 @@ jobs:
   green-light:
     name: "GREEN LIGHT — Deployment Approved"
     runs-on: ubuntu-latest
-    needs: [lint, unit-tests, contract-tests, e2e-tests]
+    needs: [dependency-audit, lint, unit-tests, contract-tests, e2e-tests]
     if: |
       always() &&
+      needs.dependency-audit.result == 'success' &&
       needs.lint.result == 'success' &&
       needs.unit-tests.result == 'success' &&
       (needs.contract-tests.result == 'success' || needs.contract-tests.result == 'skipped') &&
@@ -323,6 +375,7 @@ jobs:
           echo "║   ✅  GREEN LIGHT — Deployment Approved              ║"
           echo "║                                                      ║"
           echo "║   All quality gates passed:                          ║"
+          echo "║   ✓ Dependency Lock & Audit                           ║"
           echo "║   ✓ Lint & Static Analysis                           ║"
           echo "║   ✓ Backend Unit Tests                               ║"
           echo "║   ✓ Soroban Smart Contract Tests                     ║"
@@ -337,9 +390,10 @@ jobs:
   red-light:
     name: "RED LIGHT — Deployment Blocked"
     runs-on: ubuntu-latest
-    needs: [lint, unit-tests, contract-tests, e2e-tests]
+    needs: [dependency-audit, lint, unit-tests, contract-tests, e2e-tests]
     if: |
       always() && (
+        needs.dependency-audit.result == 'failure' ||
         needs.lint.result == 'failure' ||
         needs.unit-tests.result == 'failure' ||
         needs.contract-tests.result == 'failure' ||
@@ -356,6 +410,7 @@ jobs:
           echo "║   One or more quality gates failed.                  ║"
           echo "║   Fix failing jobs before deploying.                 ║"
           echo "║                                                      ║"
+          echo "║   Dependencies: ${{ needs.dependency-audit.result }}"
           echo "║   Lint:      ${{ needs.lint.result }}"
           echo "║   Unit:      ${{ needs.unit-tests.result }}"
           echo "║   Contracts: ${{ needs.contract-tests.result }}"
