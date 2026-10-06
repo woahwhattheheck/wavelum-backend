@@ -36,10 +36,15 @@ env:
   RUST_TOOLCHAIN: stable
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Jobs inherit read-only source access; the SLA watchdog can cancel this run.
+permissions:
+  contents: read
+
 jobs:
 
   # ── Stage 1: Lint ────────────────────────────────────────────────────────────
   lint:
+    timeout-minutes: 2
     name: "Lint & Static Analysis"
     runs-on: ubuntu-latest
     steps:
@@ -66,6 +71,7 @@ jobs:
 
   # ── Stage 2: Unit Tests ──────────────────────────────────────────────────────
   unit-tests:
+    timeout-minutes: 5
     name: "Backend Unit Tests"
     runs-on: ubuntu-latest
     needs: lint
@@ -149,6 +155,10 @@ jobs:
 
   # ── Detect whether the smart contracts changed ───────────────────────────────
   changes:
+    timeout-minutes: 2
+    permissions:
+      contents: read
+      pull-requests: read
     name: "Detect changed paths"
     runs-on: ubuntu-latest
     outputs:
@@ -164,6 +174,7 @@ jobs:
 
   # ── Stage 3: Smart Contract Tests ────────────────────────────────────────────
   contract-tests:
+    timeout-minutes: 10
     name: "Soroban Smart Contract Tests"
     runs-on: ubuntu-latest
     needs: [lint, changes]
@@ -229,6 +240,7 @@ jobs:
 
   # ── Stage 4: E2E Tests (Playwright API user journey) ─────────────────────────
   e2e-tests:
+    timeout-minutes: 15
     name: "E2E User Journey (Playwright)"
     runs-on: ubuntu-latest
     needs: [unit-tests, contract-tests]
@@ -305,15 +317,17 @@ jobs:
 
   # ── Stage 5: Green Light Gate ─────────────────────────────────────────────────
   green-light:
+    timeout-minutes: 2
     name: "GREEN LIGHT — Deployment Approved"
     runs-on: ubuntu-latest
-    needs: [lint, unit-tests, contract-tests, e2e-tests]
+    needs: [lint, unit-tests, contract-tests, e2e-tests, pipeline-performance]
     if: |
       always() &&
       needs.lint.result == 'success' &&
       needs.unit-tests.result == 'success' &&
       (needs.contract-tests.result == 'success' || needs.contract-tests.result == 'skipped') &&
-      needs.e2e-tests.result == 'success'
+      needs.e2e-tests.result == 'success' &&
+      needs.pipeline-performance.result == 'success'
 
     steps:
       - name: All gates passed — Green Light
@@ -335,15 +349,18 @@ jobs:
 
   # Red light job — signals failure clearly in the PR checks list
   red-light:
+    timeout-minutes: 2
     name: "RED LIGHT — Deployment Blocked"
     runs-on: ubuntu-latest
-    needs: [lint, unit-tests, contract-tests, e2e-tests]
+    needs: [lint, unit-tests, contract-tests, e2e-tests, pipeline-performance]
     if: |
       always() && (
         needs.lint.result == 'failure' ||
         needs.unit-tests.result == 'failure' ||
         needs.contract-tests.result == 'failure' ||
-        needs.e2e-tests.result == 'failure'
+        needs.e2e-tests.result == 'failure' ||
+        needs.pipeline-performance.result == 'failure' ||
+        needs.pipeline-performance.result == 'cancelled'
       )
 
     steps:
@@ -362,3 +379,79 @@ jobs:
           echo "║   E2E:       ${{ needs.e2e-tests.result }}"
           echo "╚══════════════════════════════════════════════════════╝"
           exit 1
+
+  # Parallel watchdog covers execution AND queue time from workflow creation.
+  pipeline-performance:
+    name: "Pipeline SLA and duration"
+    outputs:
+      elapsed_seconds: ${{ steps.sla.outputs.elapsed_seconds }}
+      sla_passed: ${{ steps.sla.outputs.sla_passed }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Enforce stage and total SLAs
+        id: sla
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const monitor = require('./.github/scripts/pipeline-performance.cjs');
+            await monitor({ github, context, core });
+      - name: Retain measured duration badge and timing report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pipeline-performance
+          path: |
+            pipeline-performance.json
+            pipeline-duration.svg
+          retention-days: 30
+
+  # Only trusted default-branch pushes publish numeric timing metadata.
+  # PR jobs never receive contents write and no workflow_run artifacts execute.
+  publish-performance-badge:
+    name: "Publish measured duration badge"
+    needs: pipeline-performance
+    if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.pipeline-performance.outputs.elapsed_seconds != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: write
+    concurrency:
+      group: performance-badge
+      cancel-in-progress: false
+    steps:
+      - name: Update dedicated badge branch
+        uses: actions/github-script@v7
+        env:
+          ELAPSED_SECONDS: ${{ needs.pipeline-performance.outputs.elapsed_seconds }}
+          SLA_PASSED: ${{ needs.pipeline-performance.outputs.sla_passed }}
+        with:
+          script: |
+            const seconds = Number(process.env.ELAPSED_SECONDS);
+            if (!Number.isFinite(seconds) || seconds < 0 || seconds > 86400) {
+              throw new Error('Invalid measured duration');
+            }
+            const { owner, repo } = context.repo;
+            const branch = 'ci-performance-badge';
+            const path = 'pipeline-duration.svg';
+            try {
+              await github.rest.git.getRef({ owner, repo, ref: 'heads/' + branch });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              const base = await github.rest.git.getRef({ owner, repo, ref: 'heads/main' });
+              await github.rest.git.createRef({ owner, repo, ref: 'refs/heads/' + branch, sha: base.data.object.sha });
+            }
+            let sha;
+            try {
+              sha = (await github.rest.repos.getContent({ owner, repo, path, ref: branch })).data.sha;
+            } catch (error) { if (error.status !== 404) throw error; }
+            const minutes = (seconds / 60).toFixed(1) + ' min';
+            const color = process.env.SLA_PASSED === 'true' ? '#4c1' : '#e05d44';
+            const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="190" height="20" role="img" aria-label="quality-gate duration: ' + minutes + '"><rect width="115" height="20" fill="#555"/><rect x="115" width="75" height="20" fill="' + color + '"/><g fill="#fff" text-anchor="middle" font-family="Verdana,sans-serif" font-size="11"><text x="57" y="14">quality-gate duration</text><text x="152" y="14">' + minutes + '</text></g></svg>';
+            await github.rest.repos.createOrUpdateFileContents({ owner, repo, path, branch, sha,
+              message: 'ci: record quality-gate duration for run ' + context.runId + ' [skip ci]',
+              content: Buffer.from(svg).toString('base64') });

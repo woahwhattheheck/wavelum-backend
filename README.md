@@ -118,3 +118,29 @@ helm install lumina ./helm
 
 - [lumina-frontend](https://github.com/stellar-network-builders/lumina-frontend) â€” Next.js web dashboard
 - [lumina-core](https://github.com/stellar-network-builders/lumina-core) â€” Soroban smart contracts
+
+## Pipeline performance
+
+[![Last default-branch quality-gate duration](https://raw.githubusercontent.com/stellar-network-builders/wavelum-backend/ci-performance-badge/pipeline-duration.svg)](https://github.com/stellar-network-builders/wavelum-backend/actions/workflows/e2e-pipeline.yml)
+
+This measures the interval from workflow creation (or rerun attempt start) through
+collection of the four quality-stage results. Green/red gate finalization, artifact
+upload and badge publishing follow this measurement and are excluded.
+Lint, unit, contract and E2E jobs have 2, 5, 10 and 15 minute limits.
+The parallel performance gate measures stages and total elapsed time, includes queue
+time in the 30 minute total budget, reports violations and cancels unfinished work.
+Every job has a bounded timeout; the watchdog has a 45 minute hard timeout.
+The workflow does not support a workflow-level timeout setting, so the total watchdog
+bounds its own execution only; it cannot enforce an absolute queue-inclusive
+45 minute workflow deadline. The deployment green gate requires SLA success.
+
+The badge above is generated from measured seconds of trusted main-branch pushes
+on the dedicated ci-performance-badge branch. It appears after the first eligible run;
+PR runs never publish it. Open a run's summary for measured minutes and download its `pipeline-performance`
+artifact for the actual `pipeline-duration.svg` badge and JSON timing record.
+PRs receive read-only Actions tokens on forks; cancellation may be denied there,
+but job timeouts and the failed performance gate still block deployment.
+
+Issue #43 remains partially open: a 30 minute limit on the complete workflow,
+including finalization and arbitrary GitHub queue delays, is not guaranteed by this
+quality-gate measurement or by the watchdog's 45 minute job timeout.
