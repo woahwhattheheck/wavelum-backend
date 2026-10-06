@@ -65,6 +65,12 @@ lumina-backend/
 - PostgreSQL
 - Redis
 
+### Dependency layout
+
+The repository has two independently locked Node.js package roots: the root services and `backend/`. Commit the matching `package-lock.json` whenever either manifest changes, and use `npm ci` for reproducible installs. Direct registry dependencies use caret ranges unless an exact pin is explicitly documented.
+
+See [Dependency management](docs/dependency-management.md) for the package boundaries, inherited root peer-resolution policy, CI lock validation, license reporting, and outdated-dependency reporting.
+
 ### Installation
 
 ```bash
