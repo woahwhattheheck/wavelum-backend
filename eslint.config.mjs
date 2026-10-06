@@ -1,7 +1,12 @@
+import js from "@eslint/js";
+import tseslint from "@typescript-eslint/eslint-plugin";
 import tsParser from "@typescript-eslint/parser";
+import eslintConfigPrettier from "eslint-config-prettier/flat";
+import globals from "globals";
 
-const sharedRules = {
-  "no-debugger": "error",
+const runtimeGlobals = {
+  ...globals.node,
+  ...globals.jest,
 };
 
 export default [
@@ -15,26 +20,35 @@ export default [
     ],
   },
   {
-    files: ["**/*.{js,jsx}"],
+    files: ["**/*.{js,jsx,cjs,mjs}"],
+    ...js.configs.recommended,
     languageOptions: {
       ecmaVersion: "latest",
-      sourceType: "module",
+      sourceType: "commonjs",
+      globals: runtimeGlobals,
       parserOptions: {
         ecmaFeatures: { jsx: true },
       },
     },
-    rules: sharedRules,
   },
   {
     files: ["**/*.{ts,tsx}"],
     languageOptions: {
       parser: tsParser,
+      ecmaVersion: "latest",
+      sourceType: "commonjs",
+      globals: runtimeGlobals,
       parserOptions: {
-        ecmaVersion: "latest",
-        sourceType: "module",
         ecmaFeatures: { jsx: true },
       },
     },
-    rules: sharedRules,
+    plugins: {
+      "@typescript-eslint": tseslint,
+    },
+    rules: {
+      ...js.configs.recommended.rules,
+      ...tseslint.configs.recommended.rules,
+    },
   },
+  eslintConfigPrettier,
 ];
