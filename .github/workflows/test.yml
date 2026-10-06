@@ -44,6 +44,7 @@ jobs:
             throw new Error('invalid docs/config lint-staged pipeline');
           }
           const hook = fs.readFileSync('.husky/pre-commit', 'utf8');
+          if (!hook.includes('set -e')) throw new Error('pre-commit must abort on lint-staged failure');
           if (!hook.includes('npx lint-staged')) throw new Error('pre-commit must run lint-staged');
           if (!hook.includes('npm audit --audit-level=high --prefix backend')) {
             throw new Error('pre-commit must run informational high-severity npm audit');
