@@ -1,4 +1,4 @@
-name: Generate root npm lockfile
+name: Finalize root npm lockfile
 
 on:
   push:
@@ -6,13 +6,15 @@ on:
       - rook/issue44-dependency-standards
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   lockfile:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: rook/issue44-dependency-standards
       - uses: actions/setup-node@v6
         with:
           node-version: '20'
@@ -20,10 +22,11 @@ jobs:
           cache-dependency-path: backend/package-lock.json
       - name: Generate root package-lock.json
         run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-      - name: Upload generated lockfile
-        uses: actions/upload-artifact@v7
-        with:
-          name: issue44-root-package-lock
-          path: package-lock.json
-          if-no-files-found: error
-          retention-days: 1
+      - name: Commit lockfile and remove generator
+        run: |
+          git config user.name "woahwhattheheck"
+          git config user.email "293286387+woahwhattheheck@users.noreply.github.com"
+          git add package-lock.json
+          git rm .github/workflows/issue44-generate-lock.yml
+          git commit -m "chore: lock root dependencies"
+          git push origin HEAD:rook/issue44-dependency-standards
