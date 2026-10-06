@@ -1,0 +1,28 @@
+name: Technical debt
+description: Describe maintenance work
+title: "[Tech debt]: "
+body:
+  - type: input
+    id: area
+    attributes:
+      label: Area of debt
+    validations:
+      required: true
+  - type: textarea
+    id: current_state
+    attributes:
+      label: Current state
+    validations:
+      required: true
+  - type: textarea
+    id: desired_state
+    attributes:
+      label: Desired state
+    validations:
+      required: true
+  - type: input
+    id: effort
+    attributes:
+      label: Effort estimate
+    validations:
+      required: true
