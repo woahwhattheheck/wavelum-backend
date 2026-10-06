@@ -51,6 +51,8 @@ jobs:
           set -e
           if [ "$status" -gt 1 ]; then
             echo "::warning::Outdated metadata lookup failed; see the retained JSON report."
+            echo "Outdated metadata unavailable; not zero outdated dependencies." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
           node -e 'const fs=require("fs"); const p=process.argv[1]; const d=JSON.parse(fs.readFileSync(p,"utf8") || "{}"); const entries=Object.keys(d).filter(k => k !== "error"); const text=d.error ? "Outdated metadata unavailable; not zero outdated dependencies." : `Outdated direct dependencies: ${entries.length}`; console.log(text); fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n${text}\n`);' "$report" || echo "::warning::Outdated report could not be parsed."
       - name: Retain dependency reports
