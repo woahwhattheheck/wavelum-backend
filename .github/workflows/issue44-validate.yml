@@ -1,0 +1,39 @@
+name: Validate issue 44 dependency audit
+
+on:
+  push:
+    branches:
+      - rook/issue44-dependency-standards
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+      - name: Validate manifests, lockfiles, and version policy
+        run: node scripts/dependency-audit.cjs validate
+      - name: Verify root locked install
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify backend locked install
+        working-directory: backend
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Scan outdated dependencies (informational)
+        run: |
+          npm outdated --json > dependency-outdated-root.json || true
+          (cd backend && npm outdated --json > ../dependency-outdated-backend.json) || true
+      - name: Report dependency and license metrics
+        run: |
+          node scripts/dependency-audit.cjs report \
+            dependency-outdated-root.json \
+            dependency-outdated-backend.json | tee dependency-metrics.md
