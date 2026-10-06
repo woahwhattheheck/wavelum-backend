@@ -36,6 +36,13 @@ describe('PII Encryption', () => {
     expect(decrypt(encrypted)).toBe(original);
   });
 
+  it('round-trips empty plaintext with an authenticated empty ciphertext', () => {
+    const encrypted = encrypt('');
+
+    expect(getEnvelopeVersion(encrypted)).toBe('2');
+    expect(decrypt(encrypted)).toBe('');
+  });
+
   it('rejects ciphertext or authentication-tag tampering', () => {
     const encrypted = encrypt('sensitive');
     const last = encrypted.slice(-1);
