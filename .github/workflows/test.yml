@@ -7,6 +7,27 @@ on:
     branches: [ "main", "develop" ]
 
 jobs:
+  validate-templates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check required issue templates
+        run: |
+          set -euo pipefail
+          required=(
+            .github/ISSUE_TEMPLATE/bug_report.yml
+            .github/ISSUE_TEMPLATE/feature_request.yml
+            .github/ISSUE_TEMPLATE/technical_debt.yml
+            .github/ISSUE_TEMPLATE/config.yml
+          )
+          for file in "${required[@]}"; do
+            test -f "$file" || { echo "::error file=$file::Required issue template is missing"; exit 1; }
+          done
+
+      - name: Validate issue template YAML
+        run: ruby -e 'require "yaml"; ARGV.each { |path| YAML.load_file(path); puts "validated #{path}" }' .github/ISSUE_TEMPLATE/*.yml
+
   test:
     runs-on: ubuntu-latest
     
