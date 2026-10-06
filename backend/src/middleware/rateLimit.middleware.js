@@ -24,16 +24,13 @@ const hashKey = (value) =>
   crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, 32);
 
 const getClientIp = (req) => {
+  if (req.ip) return req.ip;
+
   const forwarded = req.headers?.['x-forwarded-for'];
   if (typeof forwarded === 'string' && forwarded.trim()) {
     return forwarded.split(',')[0].trim();
   }
-  return (
-    req.ip ||
-    req.socket?.remoteAddress ||
-    req.connection?.remoteAddress ||
-    'unknown'
-  );
+  return req.socket?.remoteAddress || req.connection?.remoteAddress || 'unknown';
 };
 
 const getAuthenticatedSubject = (req) => {
