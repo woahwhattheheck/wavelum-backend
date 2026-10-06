@@ -12,10 +12,10 @@ ENV PORT=3000
 
 WORKDIR /app
 
-COPY --from=deps --chown=nonroot:nonroot /app/node_modules ./node_modules
-COPY --chown=nonroot:nonroot . .
+COPY --from=deps --chown=65532:65532 /app/node_modules ./node_modules
+COPY --chown=65532:65532 . .
 
-USER nonroot
+USER 65532
 
 EXPOSE 3000
 
