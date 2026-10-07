@@ -1,3 +1,5 @@
+const express = require('express');
+const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const {
   SlidingWindowCounter,
@@ -111,6 +113,37 @@ describe('rateLimit.middleware', () => {
         rateLimitInfo: expect.objectContaining({ scope: 'ip' }),
       }),
     );
+  });
+
+  test('enforces the limiter on a real Express request path', async () => {
+    const app = express();
+    const limiter = createRateLimiter({
+      mode: 'global',
+      counter: new SlidingWindowCounter({ now: () => 1000 }),
+      skip: () => false,
+      configResolver: () => ({
+        windowMs: 60000,
+        ipMax: 1,
+        userMax: 100,
+        authMax: 10,
+      }),
+    });
+
+    app.use(limiter);
+    app.get('/resource', (_req, res) => res.status(200).json({ ok: true }));
+
+    const first = await request(app).get('/resource');
+    expect(first.status).toBe(200);
+    expect(first.headers['x-ratelimit-limit']).toBe('1');
+    expect(first.headers['x-ratelimit-remaining']).toBe('0');
+
+    const blocked = await request(app).get('/resource');
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers['retry-after']).toEqual(expect.any(String));
+    expect(blocked.body).toMatchObject({
+      error: 'RATE_LIMIT_EXCEEDED',
+      rateLimitInfo: { limit: 1, remaining: 0, scope: 'ip' },
+    });
   });
 
   test('enforces a per-auth-endpoint limit with legacy rate headers', async () => {
