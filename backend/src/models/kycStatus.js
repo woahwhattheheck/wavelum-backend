@@ -1,6 +1,7 @@
 const logger = require('../utils/logger');
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../database/connection');
+const { encryptedJsonField } = require('../util/encryption');
 
 /**
  * KycStatus - Model for tracking KYC/AML verification status and expiration
@@ -150,6 +151,9 @@ const KycStatus = sequelize.define('KycStatus', {
     type: DataTypes.JSON,
     allowNull: true,
     comment: 'Raw SEP-12 API response data',
+    // Stored AES-256-GCM-encrypted at rest as {$enc: 'v<n>.<salt>.<iv>.<tag>.<ct>'}.
+    // Legacy plaintext JSON rows remain readable; new writes are encrypted.
+    ...encryptedJsonField('sep12_response_data'),
   },
   compliance_notes: {
     type: DataTypes.TEXT,
