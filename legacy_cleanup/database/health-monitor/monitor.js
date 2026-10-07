@@ -2,8 +2,7 @@ const express = require('express');
 const redis = require('redis');
 const winston = require('winston');
 const cron = require('node-cron');
-const { exec } = require('child_process');
-const { promisify } = require('util');
+const { Client } = require('pg');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -64,62 +63,63 @@ async function initializeRedis() {
 }
 
 // Health check functions
-async function checkPostgresConnection(dbConfig) {
-  return new Promise((resolve) => {
-    const cmd = `PGPASSWORD='${dbConfig.password}' psql -h ${dbConfig.host} -p ${dbConfig.port} -U ${dbConfig.user} -d ${dbConfig.database} -c "SELECT 1;"`;
-    
-    exec(cmd, { timeout: 5000 }, (error, stdout, stderr) => {
-      if (error) {
-        resolve({
-          healthy: false,
-          error: error.message,
-          responseTime: error.code === 'ETIMEDOUT' ? 5000 : null
-        });
-      } else {
-        resolve({
-          healthy: true,
-          error: null,
-          responseTime: null // Would need more sophisticated timing
-        });
-      }
-    });
+function createPostgresClient(dbConfig) {
+  return new Client({
+    host: dbConfig.host,
+    port: Number(dbConfig.port),
+    user: dbConfig.user,
+    password: dbConfig.password,
+    database: dbConfig.database,
+    connectionTimeoutMillis: 5000,
+    query_timeout: 5000,
+    statement_timeout: 5000
   });
+}
+
+async function runPostgresQuery(dbConfig, text) {
+  const client = createPostgresClient(dbConfig);
+  const startedAt = Date.now();
+
+  try {
+    await client.connect();
+    const result = await client.query(text);
+    return { result, responseTime: Date.now() - startedAt };
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
+
+async function checkPostgresConnection(dbConfig) {
+  try {
+    const { responseTime } = await runPostgresQuery(dbConfig, 'SELECT 1;');
+    return { healthy: true, error: null, responseTime };
+  } catch (error) {
+    return { healthy: false, error: error.message, responseTime: null };
+  }
 }
 
 async function checkReplicaLag(replicaConfig) {
-  return new Promise((resolve) => {
-    const cmd = `PGPASSWORD='${replicaConfig.password}' psql -h ${replicaConfig.host} -p ${replicaConfig.port} -U ${replicaConfig.user} -d ${replicaConfig.database} -c "SELECT pg_last_wal_replay_lsn() AS replay_lsn;"`;
-    
-    exec(cmd, { timeout: 5000 }, (error, stdout, stderr) => {
-      if (error) {
-        resolve({ lag: null, error: error.message });
-      } else {
-        const match = stdout.match(/([0-9A-F\/]+)/);
-        resolve({ 
-          lag: match ? match[1] : null, 
-          error: null 
-        });
-      }
-    });
-  });
+  try {
+    const { result } = await runPostgresQuery(
+      replicaConfig,
+      'SELECT pg_last_wal_replay_lsn() AS replay_lsn;'
+    );
+    return { lag: result.rows[0]?.replay_lsn || null, error: null };
+  } catch (error) {
+    return { lag: null, error: error.message };
+  }
 }
 
 async function getMasterLsn() {
-  return new Promise((resolve) => {
-    const cmd = `PGPASSWORD='${config.master.password}' psql -h ${config.master.host} -p ${config.master.port} -U ${config.master.user} -d ${config.master.database} -c "SELECT pg_current_wal_lsn() AS current_lsn;"`;
-    
-    exec(cmd, { timeout: 5000 }, (error, stdout, stderr) => {
-      if (error) {
-        resolve({ lsn: null, error: error.message });
-      } else {
-        const match = stdout.match(/([0-9A-F\/]+)/);
-        resolve({ 
-          lsn: match ? match[1] : null, 
-          error: null 
-        });
-      }
-    });
-  });
+  try {
+    const { result } = await runPostgresQuery(
+      config.master,
+      'SELECT pg_current_wal_lsn() AS current_lsn;'
+    );
+    return { lsn: result.rows[0]?.current_lsn || null, error: null };
+  } catch (error) {
+    return { lsn: null, error: error.message };
+  }
 }
 
 // Main health check function
