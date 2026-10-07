@@ -9,6 +9,7 @@ const vestingResolvers = require('./vestingResolvers');
 const capTableResolvers = require('./capTableResolvers');
 const { authMiddleware, vaultAccessMiddleware } = require('./middleware/auth');
 const { adaptiveRateLimitMiddleware } = require('./middleware/rateLimit');
+const { depthLimitRule, costLimitRule } = require('./middleware/queryGuards');
 const { makeExecutableSchema } = require('@graphql-tools/schema');
 const { applyMiddleware } = require('graphql-middleware');
 
@@ -53,6 +54,7 @@ const schemaWithMiddleware = applyMiddleware(
 const createApolloServer = () => {
   return new ApolloServer({
     schema: schemaWithMiddleware,
+    validationRules: [depthLimitRule(7), costLimitRule({ maxCost: 1000 })],
     context: ({ req, res }) => ({ req, res })
   });
 };
