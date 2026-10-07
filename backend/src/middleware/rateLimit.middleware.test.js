@@ -66,6 +66,53 @@ describe('rateLimit.middleware', () => {
     expect(identity.key).toMatch(/^user:/);
   });
 
+  test('authenticated requests remain subject to the per-IP ceiling', async () => {
+    process.env.JWT_SECRET = 'rate-limit-test-secret';
+    const token = jwt.sign({ address: 'GABC123' }, process.env.JWT_SECRET);
+    const hits = new Map();
+    const counter = {
+      hit: jest.fn(async (key) => {
+        const totalHits = (hits.get(key) || 0) + 1;
+        hits.set(key, totalHits);
+        return { totalHits, resetTime: Date.now() + 60000 };
+      }),
+    };
+    const limiter = createRateLimiter({
+      mode: 'global',
+      counter,
+      skip: () => false,
+      configResolver: () => ({
+        windowMs: 60000,
+        ipMax: 1,
+        userMax: 100,
+        authMax: 10,
+      }),
+    });
+    const req = {
+      headers: { authorization: `Bearer ${token}` },
+      ip: '127.0.0.1',
+    };
+    const res = {
+      set: jest.fn().mockReturnThis(),
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+    };
+    const next = jest.fn();
+
+    await limiter(req, res, next);
+    await limiter(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(counter.hit).toHaveBeenCalledWith(expect.stringMatching(/^ip:/), 60000);
+    expect(counter.hit).toHaveBeenCalledWith(expect.stringMatching(/^user:/), 60000);
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rateLimitInfo: expect.objectContaining({ scope: 'ip' }),
+      }),
+    );
+  });
+
   test('enforces a per-auth-endpoint limit with legacy rate headers', async () => {
     let hits = 0;
     const counter = {
