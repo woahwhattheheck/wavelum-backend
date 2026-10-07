@@ -172,6 +172,25 @@ const getGlobalIdentity = (req, config) => {
   };
 };
 
+const getGlobalIdentities = (req, config) => {
+  const identities = [
+    {
+      key: `ip:${hashKey(getClientIp(req))}`,
+      limit: config.ipMax,
+      scope: 'ip',
+    },
+  ];
+  const subject = getAuthenticatedSubject(req);
+  if (subject) {
+    identities.push({
+      key: `user:${hashKey(subject)}`,
+      limit: config.userMax,
+      scope: 'user',
+    });
+  }
+  return identities;
+};
+
 const getAuthIdentity = (req, config) => {
   const path = String(
     req.originalUrl || req.url || req.path || '/',
@@ -198,13 +217,30 @@ const createRateLimiter = ({
     if (skip(req)) return next();
 
     const config = configResolver();
-    const identity =
+    const identities =
       mode === 'auth'
-        ? getAuthIdentity(req, config)
-        : getGlobalIdentity(req, config);
+        ? [getAuthIdentity(req, config)]
+        : getGlobalIdentities(req, config);
 
-    const result = await counter.hit(identity.key, config.windowMs);
-    const remaining = Math.max(0, identity.limit - result.totalHits);
+    const checks = [];
+    for (const identity of identities) {
+      const result = await counter.hit(identity.key, config.windowMs);
+      checks.push({
+        identity,
+        result,
+        remaining: Math.max(0, identity.limit - result.totalHits),
+      });
+    }
+
+    const blocked = checks.find(
+      ({ identity, result }) => result.totalHits > identity.limit,
+    );
+    const effective =
+      blocked ||
+      checks.reduce((mostRestrictive, check) =>
+        check.remaining < mostRestrictive.remaining ? check : mostRestrictive,
+      );
+    const { identity, result, remaining } = effective;
     const resetSeconds = Math.max(
       1,
       Math.ceil((result.resetTime - Date.now()) / 1000),
@@ -217,7 +253,7 @@ const createRateLimiter = ({
       'X-RateLimit-Reset': String(resetEpochSeconds),
     });
 
-    if (result.totalHits > identity.limit) {
+    if (blocked) {
       res.set('Retry-After', String(resetSeconds));
       return res.status(429).json({
         success: false,
@@ -253,6 +289,7 @@ module.exports = {
   SlidingWindowCounter,
   resolveRateLimitConfig,
   getGlobalIdentity,
+  getGlobalIdentities,
   getAuthIdentity,
   createRateLimiter,
   globalRateLimiter,
