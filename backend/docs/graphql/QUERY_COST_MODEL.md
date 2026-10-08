@@ -37,3 +37,16 @@ for unauthenticated (50/15 min), user (200/15 min) and admin
 (1000/15 min) traffic, with stricter tiers on expensive operations.
 The depth/cost rules above run at validation time, before any resolver —
 including rate-limit middleware — executes.
+
+
+## Variable-size pagination safety
+
+Static GraphQL validation can cost literal pagination arguments directly.
+A query such as `query Page($count: Int!) { users(first: $count) { id } }`
+does not expose `$count` to validation rules. The Apollo request-time
+`didResolveOperation` hook therefore re-evaluates the selected operation
+using supplied numeric variables (or integer defaults) **before resolvers**.
+A bounded variable (e.g. `count: 10`) is allowed; `count: 600` on a
+two-field query exceeds 1000 points and is rejected. Missing, invalid,
+negative, or non-integer list-size variables fail closed instead of being
+silently treated as multiplier 1. Non-pagination variables have no cost impact.
