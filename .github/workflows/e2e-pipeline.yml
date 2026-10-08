@@ -60,6 +60,21 @@ jobs:
         working-directory: backend
         run: node --check src/index.js
 
+      - name: Strict TypeScript type-check (blocking lint stage)
+        working-directory: backend
+        run: npm run typecheck
+
+      - name: Fetch pull request base for JSDoc additions
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags --depth=1 origin "${{ github.event.pull_request.base.sha }}"
+
+      - name: Enforce typed JSDoc for new backend JavaScript
+        if: github.event_name == 'pull_request'
+        working-directory: backend
+        env:
+          JSDOC_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: npm run check:jsdoc:new
+
       - name: Run npm audit (high severity)
         working-directory: backend
         run: npm audit --audit-level=high --omit=dev || true

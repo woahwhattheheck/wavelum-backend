@@ -410,7 +410,6 @@ export class TestGenerator {
     let content = `// Auto-generated API tests
 // Generated on: ${new Date().toISOString()}
 
-import axios from 'axios';
 
 const baseURL = process.env.API_BASE_URL || 'http://localhost:4000';
 const client = axios.create({

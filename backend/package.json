@@ -16,7 +16,9 @@
     "test:e2e:headed": "playwright test --headed",
     "test:parity": "cross-env NODE_ENV=test jest --testPathPattern='sorobanVestingParity.test' --forceExit --verbose",
     "test:all": "npm run test:integration && npm run test:e2e",
-    "validate:env": "node -e \"require('./src/config/envValidation').validateEnvOrExit()\""
+    "validate:env": "node -e \"require('./src/config/envValidation').validateEnvOrExit()\"",
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "check:jsdoc:new": "node scripts/check-jsdoc-new.js"
   },
   "dependencies": {
     "@apollo/server": "^4.9.5",
