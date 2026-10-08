@@ -307,11 +307,22 @@ describe('encryptedJsonField codec (used by KycStatus.sep12_response_data)', () 
     expect(get.call(record)).toEqual({ n: 1 });
   });
 
-  it('returns undecryptable stored data raw instead of throwing', () => {
+  it('fails closed when stored encrypted data cannot authenticate or decode', () => {
     const { get } = encryptedJsonField('f');
     const record = fakeRecord();
+
     record._data.f = { $enc: 'v9.broken.payload.here.x' };
-    expect(get.call(record)).toEqual({ $enc: 'v9.broken.payload.here.x' });
+    expect(() => get.call(record)).toThrow(EncryptionError);
+
+    const parts = encryptField(JSON.stringify({ n: 1 })).split('.');
+    const tag = Buffer.from(parts[3], 'base64');
+    tag[0] ^= 1;
+    parts[3] = tag.toString('base64');
+    record._data.f = { $enc: parts.join('.') };
+    expect(() => get.call(record)).toThrow(EncryptionError);
+
+    record._data.f = 'v9.broken.payload.here.x';
+    expect(() => get.call(record)).toThrow(EncryptionError);
   });
 
   it('passes null through on write and read', () => {
