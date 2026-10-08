@@ -51,6 +51,7 @@ function selectionsDepth(selectionSet, fragments, stack, depth, memo = new Map()
       if (sub > depthCap) return sub;
       if (sub > max) max = sub;
     }
+    if (max > depthCap) return max;
     if (max === Number.MAX_SAFE_INTEGER) return max;
   }
   return max;
