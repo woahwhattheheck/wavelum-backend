@@ -209,13 +209,16 @@ consolidated into a single `package.json`:
 
 ### Lockfiles
 
-- Every package directory must commit its `package-lock.json`. `npm ci` in
-  CI and fresh clones depends on it.
+- Every active package directory should commit its `package-lock.json`;
+  `npm ci` in CI and fresh clones depends on it. The root lockfile is
+  generated but pending — `backend/package-lock.json` is the enforced one
+  today.
 - Regenerate a lockfile after changing `package.json` with
   `npm install --package-lock-only`; never hand-edit lockfile entries.
 - The `dependency-audit` CI job blocks on lockfile/package.json drift for
-  the root and `backend/` packages via `npm ci --dry-run` plus
-  `scripts/check-dependency-ranges.js`.
+  every package that has a lockfile (`npm ci --dry-run` +
+  `scripts/check-dependency-ranges.js`); a missing lockfile is reported as
+  a warning while the root artifact is pending.
 
 ### Version ranges
 

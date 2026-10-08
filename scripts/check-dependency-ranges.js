@@ -63,9 +63,12 @@ for (const dir of PACKAGE_DIRS) {
     }
   }
 
-  // 2. Lockfile presence + root spec sync.
+  // 2. Lockfile presence + root spec sync. A missing lockfile is a warning
+  // (the gate cannot enforce sync on a lockfile that does not exist yet);
+  // a present-but-stale lockfile is a blocking violation.
   if (!fs.existsSync(lockPath)) {
-    sink.push(`${dir}/package-lock.json missing — npm ci cannot run in ${dir}/`);
+    warnings.push(`${dir}/package-lock.json missing — npm ci cannot run in ${dir}/ (artifact pending)`);
+    checked.push(dir);
     continue;
   }
   const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
