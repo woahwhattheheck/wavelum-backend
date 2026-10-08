@@ -107,14 +107,14 @@ function argMultiplier(fieldNode, variables) {
   return multiplier;
 }
 
-function selectionsCost(selectionSet, fragments, stack, fieldCosts, defaultCost, variables, memo = new Map()) {
+function selectionsCost(selectionSet, fragments, stack, fieldCosts, defaultCost, variables, memo = new Map(), costCap = Number.MAX_SAFE_INTEGER) {
   let cost = 0;
   for (const selection of selectionSet.selections) {
     if (selection.kind === Kind.FIELD) {
       const fieldCost = fieldCosts[selection.name.value] ?? defaultCost;
       let sub = fieldCost;
       if (selection.selectionSet) {
-        sub += selectionsCost(selection.selectionSet, fragments, stack, fieldCosts, defaultCost, variables, memo);
+        sub += selectionsCost(selection.selectionSet, fragments, stack, fieldCosts, defaultCost, variables, memo, costCap);
       }
       cost += sub * argMultiplier(selection, variables);
     } else if (selection.kind === Kind.INLINE_FRAGMENT) {
@@ -130,12 +130,17 @@ function selectionsCost(selectionSet, fragments, stack, fieldCosts, defaultCost,
       if (!memo.has(name)) {
         memo.set(name, selectionsCost(
           fragment.selectionSet, fragments, [...stack, name],
-          fieldCosts, defaultCost, variables, memo
+          fieldCosts, defaultCost, variables, memo, costCap
         ));
       }
       cost += memo.get(name);
     }
     if (!Number.isFinite(cost) || cost >= Number.MAX_SAFE_INTEGER) return Number.MAX_SAFE_INTEGER;
+    // Once the cost exceeds the configured limit, this operation will be
+    // rejected. Stop walking a potentially enormous remaining selection tree.
+    // Fragments memoize a lower bound (costCap + 1) after this cutoff, so
+    // later spreads cannot accidentally be accepted because of truncation.
+    if (cost > costCap) return costCap + 1;
   }
   return cost;
 }
@@ -152,7 +157,7 @@ function costLimitRule({ maxCost, fieldCosts = {}, defaultCost = 1 }) {
       for (const def of context.getDocument().definitions) {
         if (def.kind === Kind.FRAGMENT_DEFINITION) fragments[def.name.value] = def;
       }
-      const cost = selectionsCost(node.selectionSet, fragments, [node.name ? node.name.value : null], fieldCosts, defaultCost);
+      const cost = selectionsCost(node.selectionSet, fragments, [node.name ? node.name.value : null], fieldCosts, defaultCost, undefined, new Map(), maxCost);
       if (cost > maxCost) {
         const label = node.name ? `"${node.name.value}"` : 'anonymous';
         context.reportError(
@@ -200,7 +205,9 @@ function runtimeCostLimitPlugin({ maxCost, fieldCosts = {}, defaultCost = 1 }) {
             [operation.name ? operation.name.value : null],
             fieldCosts,
             defaultCost,
-            variables
+            variables,
+            new Map(),
+            maxCost
           );
           if (cost > maxCost) {
             const label = operation.name ? '"' + operation.name.value + '"' : 'anonymous';
