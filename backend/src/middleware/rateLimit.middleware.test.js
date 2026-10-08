@@ -78,6 +78,19 @@ describe('rateLimit.middleware', () => {
     expect((await counter.hit('ip:partial-error', 60000)).totalHits).toBe(2);
   });
 
+  test('falls back to per-process limits when the Redis client factory throws', async () => {
+    let now = 1000;
+    const counter = new SlidingWindowCounter({
+      now: () => now,
+      clientProvider: () => {
+        throw new Error('invalid Redis connection configuration');
+      },
+    });
+    expect((await counter.hit('ip:factory-failure', 60000)).totalHits).toBe(1);
+    now += 1;
+    expect((await counter.hit('ip:factory-failure', 60000)).totalHits).toBe(2);
+  });
+
   test('keys authenticated requests by verified user identity', () => {
     process.env.JWT_SECRET = 'rate-limit-test-secret';
     const token = jwt.sign({ address: 'GABC123' }, process.env.JWT_SECRET);
