@@ -316,13 +316,25 @@ jobs:
   e2e-tests:
     name: "E2E User Journey (Playwright)"
     runs-on: ubuntu-latest
-    needs: [unit-tests, contract-tests]
+    needs: [unit-tests, contract-tests, changes]
     timeout-minutes: 16
-    # Run e2e even if contract-tests was skipped
+    # A skipped contract suite is allowed only when the verified path census
+    # found no contract edits (PR), or the operator explicitly requested a skip.
+    # Never proceed when path detection itself failed.
     if: |
       always() &&
+      needs.changes.result == 'success' &&
       needs.unit-tests.result == 'success' &&
-      (needs.contract-tests.result == 'success' || needs.contract-tests.result == 'skipped')
+      (
+        needs.contract-tests.result == 'success' ||
+        (
+          needs.contract-tests.result == 'skipped' &&
+          (
+            github.event.inputs.skip_contracts == 'true' ||
+            (github.event_name == 'pull_request' && needs.changes.outputs.contracts == 'false')
+          )
+        )
+      )
 
     # No service containers required. The E2E suite drives the backend HTTP API
     # (auth lifecycle, health, protected routes), and the backend boots in
@@ -414,14 +426,24 @@ jobs:
   green-light:
     name: "GREEN LIGHT — Deployment Approved"
     runs-on: ubuntu-latest
-    needs: [pipeline-clock, lint, unit-tests, contract-tests, e2e-tests]
+    needs: [pipeline-clock, changes, lint, unit-tests, contract-tests, e2e-tests]
     timeout-minutes: 2
     if: |
       always() &&
       needs.pipeline-clock.result == 'success' &&
+      needs.changes.result == 'success' &&
       needs.lint.result == 'success' &&
       needs.unit-tests.result == 'success' &&
-      (needs.contract-tests.result == 'success' || needs.contract-tests.result == 'skipped') &&
+      (
+        needs.contract-tests.result == 'success' ||
+        (
+          needs.contract-tests.result == 'skipped' &&
+          (
+            github.event.inputs.skip_contracts == 'true' ||
+            (github.event_name == 'pull_request' && needs.changes.outputs.contracts == 'false')
+          )
+        )
+      ) &&
       needs.e2e-tests.result == 'success'
 
     steps:
@@ -463,10 +485,14 @@ jobs:
   red-light:
     name: "RED LIGHT — Deployment Blocked"
     runs-on: ubuntu-latest
-    needs: [lint, unit-tests, contract-tests, e2e-tests]
+    needs: [pipeline-clock, changes, lint, unit-tests, contract-tests, e2e-tests]
     timeout-minutes: 2
     if: |
       always() && (
+        needs.pipeline-clock.result == 'failure' ||
+        needs.pipeline-clock.result == 'cancelled' ||
+        needs.changes.result == 'failure' ||
+        needs.changes.result == 'cancelled' ||
         needs.lint.result == 'failure' ||
         needs.lint.result == 'cancelled' ||
         needs.unit-tests.result == 'failure' ||
