@@ -13,7 +13,9 @@ if (!base || !/^[0-9a-f]{40}$/.test(base)) {
 }
 let changed;
 try {
-  changed = execFileSync('git', ['diff', '--name-only', '--diff-filter=A', '-z', base, 'HEAD'], { encoding: 'utf8' });
+  // Source paths newly entering backend/src count even if Git detects a rename.
+  // Include A/C/R destination paths; modified historical JS remains grandfathered.
+  changed = execFileSync('git', ['diff', '--name-only', '--find-renames', '--diff-filter=ACR', '-z', base, 'HEAD'], { encoding: 'utf8' });
 } catch (error) {
   console.error('Could not compare against the pull-request base:', error.message);
   process.exit(2);
