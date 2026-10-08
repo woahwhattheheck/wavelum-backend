@@ -27,7 +27,9 @@ const IV_LENGTH = 12; // recommended nonce size for GCM
 const SALT_LENGTH = 16;
 const KEY_LENGTH = 32;
 const HKDF_INFO = 'wavelum-pii-field';
-const PAYLOAD_PATTERN = /^v(\d+)\.([A-Za-z0-9+/=]+)\.([A-Za-z0-9+/=]+)\.([A-Za-z0-9+/=]+)\.([A-Za-z0-9+/=]+)$/;
+// GCM authenticates empty plaintext with a nonempty tag but zero ciphertext.
+// Permit an empty final segment; salt, IV, and auth tag must remain nonempty.
+const PAYLOAD_PATTERN = /^v(\d+)\.([A-Za-z0-9+/=]+)\.([A-Za-z0-9+/=]+)\.([A-Za-z0-9+/=]+)\.([A-Za-z0-9+/=]*)$/;
 
 class EncryptionError extends Error {
   constructor(message) {
