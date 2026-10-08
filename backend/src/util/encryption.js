@@ -205,6 +205,15 @@ function decryptVersioned(payload) {
 function decryptLegacyObject(legacy) {
   // Original implementation: AES-256-GCM directly under the raw master key,
   // no HKDF, {iv, content, tag} hex object.
+  // The historical writer emitted a 16-byte IV and a full 16-byte GCM tag.
+  // Node can accept shorter authentication tags by default, and Buffer.from
+  // silently truncates malformed hex. Never weaken this legacy read boundary.
+  if (!legacy || typeof legacy !== 'object' ||
+      typeof legacy.iv !== 'string' || !/^[0-9a-fA-F]{32}$/.test(legacy.iv) ||
+      typeof legacy.tag !== 'string' || !/^[0-9a-fA-F]{32}$/.test(legacy.tag) ||
+      typeof legacy.content !== 'string' || !/^(?:[0-9a-fA-F]{2})*$/.test(legacy.content)) {
+    throw new EncryptionError('Malformed legacy encrypted payload: invalid IV, tag, or ciphertext');
+  }
   const hex = process.env.PII_ENCRYPTION_KEY;
   if (!hex) {
     throw new EncryptionError('Legacy payload requires PII_ENCRYPTION_KEY');
@@ -229,7 +238,10 @@ function decryptLegacyObject(legacy) {
  */
 function decryptField(payload) {
   if (payload === null || payload === undefined) return payload;
-  if (typeof payload === 'object' && payload.iv && payload.content && payload.tag) {
+  if (typeof payload === 'object' &&
+      typeof payload.iv === 'string' &&
+      typeof payload.content === 'string' &&
+      typeof payload.tag === 'string') {
     const plaintext = decryptLegacyObject(payload);
     audit({ op: 'decrypt', keyVersion: 'legacy' });
     return plaintext;
@@ -241,7 +253,8 @@ function decryptField(payload) {
   if (trimmed.startsWith('{')) {
     try {
       const parsed = JSON.parse(trimmed);
-      if (parsed && parsed.iv && parsed.content && parsed.tag) {
+      if (parsed && typeof parsed.iv === 'string' &&
+          typeof parsed.content === 'string' && typeof parsed.tag === 'string') {
         const plaintext = decryptLegacyObject(parsed);
         audit({ op: 'decrypt', keyVersion: 'legacy' });
         return plaintext;
