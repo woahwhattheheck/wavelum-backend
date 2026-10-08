@@ -513,6 +513,8 @@ jobs:
           echo "║   One or more quality gates failed.                  ║"
           echo "║   Fix failing jobs before deploying.                 ║"
           echo "║                                                      ║"
+          echo "║   Clock:     ${{ needs.pipeline-clock.result }}"
+          echo "║   Path scan: ${{ needs.changes.result }}"
           echo "║   Lint:      ${{ needs.lint.result }}"
           echo "║   Unit:      ${{ needs.unit-tests.result }}"
           echo "║   Contracts: ${{ needs.contract-tests.result }}"
