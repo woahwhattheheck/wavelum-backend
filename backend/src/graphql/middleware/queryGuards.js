@@ -74,7 +74,7 @@ function depthLimitRule(maxDepth) {
       for (const def of context.getDocument().definitions) {
         if (def.kind === Kind.FRAGMENT_DEFINITION) fragments[def.name.value] = def;
       }
-      const depth = selectionsDepth(node.selectionSet, fragments, [node.name ? node.name.value : null], 0, new Map(), maxDepth);
+      const depth = selectionsDepth(node.selectionSet, fragments, [], 0, new Map(), maxDepth);
       if (depth > maxDepth) {
         const label = node.name ? `"${node.name.value}"` : 'anonymous';
         context.reportError(
@@ -232,7 +232,7 @@ function costLimitRule({ maxCost, fieldCosts = {}, defaultCost = 1 }) {
       for (const def of context.getDocument().definitions) {
         if (def.kind === Kind.FRAGMENT_DEFINITION) fragments[def.name.value] = def;
       }
-      const cost = selectionsCost(node.selectionSet, fragments, [node.name ? node.name.value : null], fieldCosts, defaultCost, undefined, new Map(), maxCost);
+      const cost = selectionsCost(node.selectionSet, fragments, [], fieldCosts, defaultCost, undefined, new Map(), maxCost);
       if (cost > maxCost) {
         const label = node.name ? `"${node.name.value}"` : 'anonymous';
         context.reportError(
@@ -276,7 +276,7 @@ function runtimeCostLimitPlugin({ maxCost, fieldCosts = {}, defaultCost = 1 }) {
           const cost = selectionsCost(
             operation.selectionSet,
             fragments,
-            [operation.name ? operation.name.value : null],
+            [],
             fieldCosts,
             defaultCost,
             variables,
