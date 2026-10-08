@@ -20,12 +20,19 @@ operations. Application builds/tests remain separate.
 
 Compatible caret ranges are the default policy for npm dependencies, as used in
 both current manifests. Use exact versions only for a documented compatibility
-exception. A major upgrade requires an explicit source/lock change and review;
+exception. The audit enforces exact `x.y.z` or caret `^x.y.z` registry specs,
+including valid prerelease/build versions, across dependencies, development,
+optional and peer dependencies. Tags, wildcards, tilde/comparator ranges and
+remote URL/git specs fail the audit even when the manifest and lock agree.
+Local `file:`, `link:` and `workspace:` references remain supported.
+A major upgrade requires an explicit source/lock change and review;
 `npm ci` always uses the committed exact resolved graph regardless of the allowed
 manifest range. Environment/engine constraints are not dependency ranges.
 
 The Dependency Audit workflow checks both packages. Manifest declaration drift
 or invalid npm lock resolution fails the job; it does not rewrite the lock.
+Run `node scripts/dependency-audit.cjs root` and
+`node scripts/dependency-audit.cjs backend` locally for the same checks.
 `scripts/dependency-audit.cjs` emits JSON/Markdown inventory of locked packages,
 deprecation metadata and license expressions. GPL/AGPL expressions, dual licenses
 and missing license metadata are review alerts, not automatic blockers or a claim

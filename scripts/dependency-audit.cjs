@@ -4,7 +4,10 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const FIELDS = ['dependencies', 'devDependencies', 'optionalDependencies'];
+const FIELDS = ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'];
+const VERSION = String.raw`(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?`;
+const REGISTRY_RANGE = new RegExp(`^\\^?${VERSION}$`);
+const LOCAL_REFERENCE = /^(?:file:|link:|workspace:).+$/;
 const PACKAGES = { root: '.', backend: 'backend' };
 
 function inspect(manifest, lock) {
@@ -16,6 +19,11 @@ function inspect(manifest, lock) {
   for (const field of FIELDS) {
     const declared = manifest[field] || {};
     const recorded = locked?.[field] || {};
+    for (const [name, spec] of Object.entries(declared)) {
+      if (typeof spec !== 'string' || (!REGISTRY_RANGE.test(spec) && !LOCAL_REFERENCE.test(spec))) {
+        errors.push(`${field}.${name}: unsupported dependency range ${JSON.stringify(spec)}; use an exact version or compatible caret range.`);
+      }
+    }
     for (const name of new Set([...Object.keys(declared), ...Object.keys(recorded)])) {
       if (declared[name] !== recorded[name]) {
         errors.push(`${field}.${name}: manifest=${declared[name] ?? '(absent)'}, lock=${recorded[name] ?? '(absent)'}`);
@@ -69,7 +77,7 @@ function main(args) {
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
   console.log(`${label}: ${report.packageCount} locked packages, ${report.deprecated.length} deprecated, ${report.copyleft.length} GPL/AGPL expressions, ${report.unknownLicenses.length} unspecified licenses.`);
   if (report.errors.length) {
-    console.error('Manifest/lockfile drift:\n' + report.errors.join('\n'));
+    console.error('Dependency policy violations:\n' + report.errors.join('\n'));
     process.exitCode = 1;
   }
 }
