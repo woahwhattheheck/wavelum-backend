@@ -15,7 +15,7 @@ WORKDIR /app
 
 COPY --from=deps --chown=65532:65532 /app/node_modules ./node_modules
 COPY --from=deps --chown=65532:65532 /app/logs ./logs
-COPY --chown=65532:65532 package.json monitor.js ./
+COPY --chown=65532:65532 package.json monitor.js walLag.js ./
 
 USER 65532
 
