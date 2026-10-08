@@ -138,6 +138,18 @@ describe('costLimitRule', () => {
     expect(errors(bounded, [rule()])).toEqual([]);
   });
 
+  it('charges the schema first=50 default on omitted and last-only pagination', () => {
+    // 26 cost points * 50 default records = 1300; the old multiplier of
+    // 1 (omitted) or 4 (last-only) allowed both over-budget operations.
+    const fields = Array.from({ length: 25 }, (_v, i) => 'a' + i + ': id').join(' ');
+    const noArg = '{ vestingHistory { ' + fields + ' } }';
+    const lastOnly = '{ claimHistory(pagination: { last: 4 }) { ' + fields + ' } }';
+    expect(errors(noArg, [rule()])[0]).toMatch(/maximum query cost of 1000/);
+    expect(errors(lastOnly, [rule()])[0]).toMatch(/maximum query cost of 1000/);
+    const explicit = '{ claimHistory(pagination: { first: 1, last: 4 }) { ' + fields + ' } }';
+    expect(errors(explicit, [rule()])).toEqual([]);
+  });
+
   it('honors per-field cost overrides', () => {
     const pricey = costLimitRule({ maxCost: 10, fieldCosts: { users: 50 } });
     expect(errors('{ users { id } }', [pricey])[0]).toMatch(/estimated cost/);
@@ -212,6 +224,19 @@ describe('runtimeCostLimitPlugin', () => {
       'searchVestingSchedules(pagination: $page) { id } }';
     await expect(runCostCheck(objectDefault, {}))
       .rejects.toThrow(/maximum query cost of 1000/);
+  });
+
+  it('charges omitted input-object defaults at runtime without rejecting explicit first', async () => {
+    const fields = Array.from({ length: 25 }, (_v, i) => 'a' + i + ': id').join(' ');
+    const absent = 'query Q { searchVestingSchedules { ' + fields + ' } }';
+    await expect(runCostCheck(absent, {})).rejects.toThrow(/maximum query cost of 1000/);
+
+    const withVariable = 'query Q($page: PaginationInput!) { ' +
+      'vestingHistory(pagination: $page) { ' + fields + ' } }';
+    await expect(runCostCheck(withVariable, { page: { last: 4 } }))
+      .rejects.toThrow(/maximum query cost of 1000/);
+    await expect(runCostCheck(withVariable, { page: { first: 1, last: 4 } }))
+      .resolves.toBeUndefined();
   });
 
   it('honors default variable values but fails closed on missing list sizes', async () => {
