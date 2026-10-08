@@ -1,5 +1,4 @@
-const rateLimit = require('express-rate-limit');
-const { ipKeyGenerator } = rateLimit;
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 
 // Only the framework's connection-derived IP may select an ingress bucket.
 // Arbitrary x-user-address and Bearer bytes are NOT authenticated principals.
