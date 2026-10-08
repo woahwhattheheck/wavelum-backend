@@ -67,9 +67,20 @@ function parseKeyRing() {
   const multi = process.env.PII_ENCRYPTION_KEYS;
   if (multi && multi.trim()) {
     for (const pair of multi.split(',')) {
-      const [version, hex] = pair.split('=').map((s) => s && s.trim());
-      if (!version || !hex) {
+      const entry = pair.trim();
+      const separator = entry.indexOf('=');
+      if (separator < 1 || separator !== entry.lastIndexOf('=')) {
         throw new EncryptionError('PII_ENCRYPTION_KEYS entries must be "v<n>=<hex>"');
+      }
+      const version = entry.slice(0, separator).trim();
+      const hex = entry.slice(separator + 1).trim();
+      // Version tags are part of the stored ciphertext format. Accepting a
+      // tag that decryptVersioned() cannot parse would permanently strand PII.
+      if (!/^v[1-9]\d*$/.test(version) || !Number.isSafeInteger(Number(version.slice(1)))) {
+        throw new EncryptionError('PII key version must be v1, v2, ... with a safe numeric index');
+      }
+      if (ring.has(version)) {
+        throw new EncryptionError(`Duplicate PII key version ${version}`);
       }
       ring.set(version, decodeKey(version, hex));
     }
@@ -80,11 +91,12 @@ function parseKeyRing() {
 }
 
 function decodeKey(version, hex) {
-  const key = Buffer.from(hex, 'hex');
-  if (key.length !== KEY_LENGTH) {
+  // Buffer.from(hex, 'hex') silently truncates at invalid characters; validate
+  // the complete configured key before decoding rather than accepting a prefix.
+  if (typeof hex !== 'string' || !/^[0-9a-fA-F]{64}$/.test(hex)) {
     throw new EncryptionError(`PII key ${version} must be ${KEY_LENGTH} bytes of hex`);
   }
-  return key;
+  return Buffer.from(hex, 'hex');
 }
 
 function getKeyRing() {
