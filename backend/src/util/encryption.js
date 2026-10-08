@@ -275,9 +275,10 @@ function rotateField(payload, options = {}) {
   if (typeof payload === 'string') {
     const match = PAYLOAD_PATTERN.exec(payload.trim());
     if (match && `v${match[1]}` === current && !options.force) {
-      // A same-version payload is only a no-op after its authentication tag
-      // has been verified; otherwise corruption bypasses rotation checks.
-      decryptField(payload);
+      // Authenticate this current-version ciphertext before returning it,
+      // but do not report a separate decrypt event for a no-op rotation.
+      // Public decryptField() emits audit events; this internal check must not.
+      decryptVersioned(payload.trim());
       return payload;
     }
   }
