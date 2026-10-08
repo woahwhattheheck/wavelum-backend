@@ -20,18 +20,19 @@ const { GraphQLError, Kind } = require('graphql');
 
 const LIST_SIZE_ARGS = new Set(['first', 'last', 'limit', 'take', 'pageSize']);
 
-function selectionsDepth(selectionSet, fragments, stack, depth, memo = new Map()) {
+function selectionsDepth(selectionSet, fragments, stack, depth, memo = new Map(), depthCap = Infinity) {
   let max = depth;
   for (const selection of selectionSet.selections) {
     if (selection.kind === Kind.FIELD) {
       const childDepth = depth + 1;
+      if (childDepth > depthCap) return childDepth;
       if (childDepth > max) max = childDepth;
       if (selection.selectionSet) {
-        const sub = selectionsDepth(selection.selectionSet, fragments, stack, childDepth, memo);
+        const sub = selectionsDepth(selection.selectionSet, fragments, stack, childDepth, memo, depthCap);
         if (sub > max) max = sub;
       }
     } else if (selection.kind === Kind.INLINE_FRAGMENT) {
-      const sub = selectionsDepth(selection.selectionSet, fragments, stack, depth, memo);
+      const sub = selectionsDepth(selection.selectionSet, fragments, stack, depth, memo, depthCap);
       if (sub > max) max = sub;
     } else if (selection.kind === Kind.FRAGMENT_SPREAD) {
       const name = selection.name.value;
@@ -42,11 +43,12 @@ function selectionsDepth(selectionSet, fragments, stack, depth, memo = new Map()
       // reused at any parent depth. Without this memo, an acyclic diamond
       // of fragment spreads expands exponentially before validation finishes.
       if (!memo.has(name)) {
-        memo.set(name, selectionsDepth(fragment.selectionSet, fragments, [...stack, name], 0, memo));
+        memo.set(name, selectionsDepth(fragment.selectionSet, fragments, [...stack, name], 0, memo, depthCap));
       }
       const relative = memo.get(name);
       const sub = relative === Number.MAX_SAFE_INTEGER
         ? Number.MAX_SAFE_INTEGER : depth + relative;
+      if (sub > depthCap) return sub;
       if (sub > max) max = sub;
     }
     if (max === Number.MAX_SAFE_INTEGER) return max;
@@ -66,7 +68,7 @@ function depthLimitRule(maxDepth) {
       for (const def of context.getDocument().definitions) {
         if (def.kind === Kind.FRAGMENT_DEFINITION) fragments[def.name.value] = def;
       }
-      const depth = selectionsDepth(node.selectionSet, fragments, [node.name ? node.name.value : null], 0);
+      const depth = selectionsDepth(node.selectionSet, fragments, [node.name ? node.name.value : null], 0, new Map(), maxDepth);
       if (depth > maxDepth) {
         const label = node.name ? `"${node.name.value}"` : 'anonymous';
         context.reportError(
