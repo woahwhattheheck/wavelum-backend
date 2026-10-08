@@ -72,35 +72,48 @@ function depthLimitRule(maxDepth) {
   });
 }
 
-function argMultiplier(fieldNode) {
+function argMultiplier(fieldNode, variables) {
   let multiplier = 1;
   for (const arg of fieldNode.arguments || []) {
-    if (LIST_SIZE_ARGS.has(arg.name.value) && arg.value.kind === Kind.INT) {
-      const n = parseInt(arg.value.value, 10);
-      if (Number.isFinite(n) && n > multiplier) multiplier = n;
+    if (!LIST_SIZE_ARGS.has(arg.name.value)) continue;
+
+    let n;
+    if (arg.value.kind === Kind.INT) {
+      n = Number(arg.value.value);
+    } else if (arg.value.kind === Kind.VARIABLE) {
+      // Validation-time rules cannot inspect request variables. At request
+      // time, reject any missing, invalid, or unbounded list-size variable.
+      if (variables === undefined) continue;
+      n = variables[arg.value.name.value];
+      if (!Number.isSafeInteger(n) || n < 0) return Number.MAX_SAFE_INTEGER;
+    } else {
+      return Number.MAX_SAFE_INTEGER;
     }
+
+    if (!Number.isSafeInteger(n) || n < 0) return Number.MAX_SAFE_INTEGER;
+    if (n > multiplier) multiplier = n;
   }
   return multiplier;
 }
 
-function selectionsCost(selectionSet, fragments, stack, fieldCosts, defaultCost) {
+function selectionsCost(selectionSet, fragments, stack, fieldCosts, defaultCost, variables) {
   let cost = 0;
   for (const selection of selectionSet.selections) {
     if (selection.kind === Kind.FIELD) {
       const fieldCost = fieldCosts[selection.name.value] ?? defaultCost;
       let sub = fieldCost;
       if (selection.selectionSet) {
-        sub += selectionsCost(selection.selectionSet, fragments, stack, fieldCosts, defaultCost);
+        sub += selectionsCost(selection.selectionSet, fragments, stack, fieldCosts, defaultCost, variables);
       }
-      cost += sub * argMultiplier(selection);
+      cost += sub * argMultiplier(selection, variables);
     } else if (selection.kind === Kind.INLINE_FRAGMENT) {
-      cost += selectionsCost(selection.selectionSet, fragments, stack, fieldCosts, defaultCost);
+      cost += selectionsCost(selection.selectionSet, fragments, stack, fieldCosts, defaultCost, variables);
     } else if (selection.kind === Kind.FRAGMENT_SPREAD) {
       const name = selection.name.value;
       if (stack.includes(name)) return Number.MAX_SAFE_INTEGER;
       const fragment = fragments[name];
       if (!fragment) continue;
-      cost += selectionsCost(fragment.selectionSet, fragments, [...stack, name], fieldCosts, defaultCost);
+      cost += selectionsCost(fragment.selectionSet, fragments, [...stack, name], fieldCosts, defaultCost, variables);
     }
     if (cost === Number.MAX_SAFE_INTEGER) return cost;
   }
@@ -133,4 +146,54 @@ function costLimitRule({ maxCost, fieldCosts = {}, defaultCost = 1 }) {
   });
 }
 
-module.exports = { depthLimitRule, costLimitRule };
+/**
+ * Recheck the selected operation's cost after Apollo has resolved its operation
+ * and received variables, but before any GraphQL resolver executes.
+ * The validation-time rule still handles literal-sized queries cheaply.
+ */
+function runtimeCostLimitPlugin({ maxCost, fieldCosts = {}, defaultCost = 1 }) {
+  return {
+    async requestDidStart() {
+      return {
+        async didResolveOperation(requestContext) {
+          const operation = requestContext.operation;
+          if (!operation) return;
+
+          const fragments = {};
+          for (const def of requestContext.document.definitions) {
+            if (def.kind === Kind.FRAGMENT_DEFINITION) fragments[def.name.value] = def;
+          }
+          const variables = Object.assign(
+            Object.create(null),
+            requestContext.request.variables || {}
+          );
+          for (const def of operation.variableDefinitions || []) {
+            const name = def.variable.name.value;
+            if (!Object.prototype.hasOwnProperty.call(variables, name) &&
+                def.defaultValue && def.defaultValue.kind === Kind.INT) {
+              variables[name] = Number(def.defaultValue.value);
+            }
+          }
+          const cost = selectionsCost(
+            operation.selectionSet,
+            fragments,
+            [operation.name ? operation.name.value : null],
+            fieldCosts,
+            defaultCost,
+            variables
+          );
+          if (cost > maxCost) {
+            const label = operation.name ? '"' + operation.name.value + '"' : 'anonymous';
+            throw new GraphQLError(
+              'Operation ' + label + ' exceeds the maximum query cost of ' +
+              maxCost + ' (estimated cost: ' + cost + ').',
+              [operation]
+            );
+          }
+        }
+      };
+    }
+  };
+}
+
+module.exports = { depthLimitRule, costLimitRule, runtimeCostLimitPlugin };
