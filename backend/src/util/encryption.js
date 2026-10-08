@@ -356,6 +356,34 @@ function encryptedJsonField(fieldName) {
   };
 }
 
+/**
+ * Builds a Sequelize attribute get/set pair for a text value encrypted at rest.
+ * Legacy plaintext rows remain readable; new non-null writes use the existing
+ * versioned field payload and authenticated reads reject damaged ciphertext.
+ */
+function encryptedTextField(fieldName) {
+  return {
+    get() {
+      const raw = this.getDataValue(fieldName);
+      if (raw === null || raw === undefined) return raw;
+      if (!isEncryptedField(raw)) return raw;
+      try {
+        return decryptField(raw);
+      } catch {
+        audit({ op: 'decrypt', field: fieldName, error: 'failed' });
+        throw new EncryptionError('Stored encrypted field failed authentication or decoding');
+      }
+    },
+    set(value) {
+      if (value === null || value === undefined) {
+        this.setDataValue(fieldName, value);
+        return;
+      }
+      this.setDataValue(fieldName, encryptField(String(value)));
+    },
+  };
+}
+
 // Test support: drop the cached key ring so tests can vary the environment.
 function __resetKeyRingForTests() {
   keyRingCache = null;
@@ -369,6 +397,7 @@ module.exports = {
   rotateField,
   isEncryptedField,
   encryptedJsonField,
+  encryptedTextField,
   setAuditHook,
   EncryptionError,
   __resetKeyRingForTests,
