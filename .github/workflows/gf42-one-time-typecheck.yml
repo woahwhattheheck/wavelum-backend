@@ -12,7 +12,7 @@ jobs:
   focused-tscheck:
     # Only the compiler-preflight commit triggers execution; later edits must
     # not launch repeated builds or unrelated test suites.
-    if: github.event.head_commit.message == 'ci(gf42): run one focused TypeScript compiler check'
+    if: github.event.head_commit.message == 'gf42 one-shot backend typecheck'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
