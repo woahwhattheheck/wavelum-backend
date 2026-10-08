@@ -19,7 +19,8 @@
     "strict": true,
     "composite": true,
     "checkJs": false,
-    "moduleResolution": "node"
+    "moduleResolution": "node",
+    "ignoreDeprecations": "6.0"
   },
   "include": [
     "src/**/*.ts",
