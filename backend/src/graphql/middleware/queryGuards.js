@@ -20,25 +20,33 @@ const { GraphQLError, Kind } = require('graphql');
 
 const LIST_SIZE_ARGS = new Set(['first', 'last', 'limit', 'take', 'pageSize']);
 
-function selectionsDepth(selectionSet, fragments, stack, depth) {
+function selectionsDepth(selectionSet, fragments, stack, depth, memo = new Map()) {
   let max = depth;
   for (const selection of selectionSet.selections) {
     if (selection.kind === Kind.FIELD) {
       const childDepth = depth + 1;
       if (childDepth > max) max = childDepth;
       if (selection.selectionSet) {
-        const sub = selectionsDepth(selection.selectionSet, fragments, stack, childDepth);
+        const sub = selectionsDepth(selection.selectionSet, fragments, stack, childDepth, memo);
         if (sub > max) max = sub;
       }
     } else if (selection.kind === Kind.INLINE_FRAGMENT) {
-      const sub = selectionsDepth(selection.selectionSet, fragments, stack, depth);
+      const sub = selectionsDepth(selection.selectionSet, fragments, stack, depth, memo);
       if (sub > max) max = sub;
     } else if (selection.kind === Kind.FRAGMENT_SPREAD) {
       const name = selection.name.value;
       if (stack.includes(name)) return Number.MAX_SAFE_INTEGER;
       const fragment = fragments[name];
       if (!fragment) continue;
-      const sub = selectionsDepth(fragment.selectionSet, fragments, [...stack, name], depth);
+      // Each fragment's depth is relative to its spread site and can be
+      // reused at any parent depth. Without this memo, an acyclic diamond
+      // of fragment spreads expands exponentially before validation finishes.
+      if (!memo.has(name)) {
+        memo.set(name, selectionsDepth(fragment.selectionSet, fragments, [...stack, name], 0, memo));
+      }
+      const relative = memo.get(name);
+      const sub = relative === Number.MAX_SAFE_INTEGER
+        ? Number.MAX_SAFE_INTEGER : depth + relative;
       if (sub > max) max = sub;
     }
     if (max === Number.MAX_SAFE_INTEGER) return max;
@@ -96,26 +104,35 @@ function argMultiplier(fieldNode, variables) {
   return multiplier;
 }
 
-function selectionsCost(selectionSet, fragments, stack, fieldCosts, defaultCost, variables) {
+function selectionsCost(selectionSet, fragments, stack, fieldCosts, defaultCost, variables, memo = new Map()) {
   let cost = 0;
   for (const selection of selectionSet.selections) {
     if (selection.kind === Kind.FIELD) {
       const fieldCost = fieldCosts[selection.name.value] ?? defaultCost;
       let sub = fieldCost;
       if (selection.selectionSet) {
-        sub += selectionsCost(selection.selectionSet, fragments, stack, fieldCosts, defaultCost, variables);
+        sub += selectionsCost(selection.selectionSet, fragments, stack, fieldCosts, defaultCost, variables, memo);
       }
       cost += sub * argMultiplier(selection, variables);
     } else if (selection.kind === Kind.INLINE_FRAGMENT) {
-      cost += selectionsCost(selection.selectionSet, fragments, stack, fieldCosts, defaultCost, variables);
+      cost += selectionsCost(selection.selectionSet, fragments, stack, fieldCosts, defaultCost, variables, memo);
     } else if (selection.kind === Kind.FRAGMENT_SPREAD) {
       const name = selection.name.value;
       if (stack.includes(name)) return Number.MAX_SAFE_INTEGER;
       const fragment = fragments[name];
       if (!fragment) continue;
-      cost += selectionsCost(fragment.selectionSet, fragments, [...stack, name], fieldCosts, defaultCost, variables);
+      // Count each occurrence in the *cost*, but evaluate the fragment's
+      // contents only once per operation. Runtime and static requests each
+      // receive a fresh memo, so variable-sized list costs cannot leak.
+      if (!memo.has(name)) {
+        memo.set(name, selectionsCost(
+          fragment.selectionSet, fragments, [...stack, name],
+          fieldCosts, defaultCost, variables, memo
+        ));
+      }
+      cost += memo.get(name);
     }
-    if (cost === Number.MAX_SAFE_INTEGER) return cost;
+    if (!Number.isFinite(cost) || cost >= Number.MAX_SAFE_INTEGER) return Number.MAX_SAFE_INTEGER;
   }
   return cost;
 }
