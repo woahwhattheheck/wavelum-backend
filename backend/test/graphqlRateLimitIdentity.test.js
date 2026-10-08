@@ -1,10 +1,10 @@
 jest.mock('express-rate-limit', () => {
   const middlewareFactory = jest.fn((options) => options);
-  middlewareFactory.ipKeyGenerator = jest.fn((ip) => {
+  const ipKeyGenerator = jest.fn((ip) => {
     if (ip.startsWith('2001:db8:')) return '2001:db8::/56';
     return ip;
   });
-  return middlewareFactory;
+  return { rateLimit: middlewareFactory, ipKeyGenerator };
 });
 
 const {
