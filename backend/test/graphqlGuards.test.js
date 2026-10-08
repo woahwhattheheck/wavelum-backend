@@ -5,7 +5,7 @@
  * covers the exact code wired into Apollo Server's `validationRules`.
  */
 const { parse, buildSchema, validate } = require('graphql');
-const { depthLimitRule, costLimitRule } = require('../src/graphql/middleware/queryGuards');
+const { depthLimitRule, costLimitRule, runtimeCostLimitPlugin } = require('../src/graphql/middleware/queryGuards');
 
 const schema = buildSchema(`
   type User { id: ID!, name: String, posts(first: Int): [Post], followers(first: Int): [User] }
@@ -100,5 +100,32 @@ describe('costLimitRule', () => {
   it('applies to mutations as well as queries', () => {
     const wide = `{ ${Array.from({ length: 1200 }, (_, i) => `m${i}: createPost(title: "x") { id }`).join(' ')} }`;
     expect(errors(wide, [rule()])[0]).toMatch(/maximum query cost/);
+  });
+});
+
+
+describe('runtimeCostLimitPlugin', () => {
+  const runCostCheck = async (query, variables) => {
+    const document = parse(query);
+    const operation = document.definitions.find((d) => d.kind === 'OperationDefinition');
+    const listener = await runtimeCostLimitPlugin({ maxCost: 1000 }).requestDidStart();
+    return listener.didResolveOperation({ document, operation, request: { variables } });
+  };
+
+  it('allows a bounded variable but blocks oversized GraphQL pagination variables', async () => {
+    const query = 'query Page($count: Int!) { users(first: $count) { id } }';
+    // Static validation cannot see the caller's variables, so the Apollo
+    // request-time hook must enforce the size before running resolvers.
+    expect(errors(query, [costLimitRule({ maxCost: 1000 })])).toEqual([]);
+    await expect(runCostCheck(query, { count: 10 })).resolves.toBeUndefined();
+    await expect(runCostCheck(query, { count: 600 })).rejects.toThrow(/maximum query cost of 1000/);
+  });
+
+  it('honors default variable values but fails closed on missing list sizes', async () => {
+    const withDefault = 'query Page($count: Int = 10) { users(first: $count) { id } }';
+    await expect(runCostCheck(withDefault, {})).resolves.toBeUndefined();
+    await expect(runCostCheck(withDefault, { count: 600 })).rejects.toThrow(/maximum query cost/);
+    const missing = 'query Page($count: Int) { users(first: $count) { id } }';
+    await expect(runCostCheck(missing, {})).rejects.toThrow(/maximum query cost/);
   });
 });
