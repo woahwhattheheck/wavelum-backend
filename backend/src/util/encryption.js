@@ -323,8 +323,9 @@ function decrypt(encrypted) {
 /**
  * Builds a Sequelize attribute get/set pair that stores a JSON value as an
  * encrypted {$enc: '<versioned payload>'} object at rest and returns the
- * decrypted object on read. Legacy plaintext JSON stays readable; undecryptable
- * values are returned raw (and logged) rather than breaking hydration.
+ * decrypted object on read. Legacy plaintext JSON stays readable, but once a
+ * value carries this module's encrypted marker, authentication/decoding errors
+ * fail closed instead of exposing ciphertext as if it were application data.
  * @param {string} fieldName attribute name, used only for error logging
  */
 function encryptedJsonField(fieldName) {
@@ -332,17 +333,18 @@ function encryptedJsonField(fieldName) {
     get() {
       const raw = this.getDataValue(fieldName);
       if (raw === null || raw === undefined) return raw;
+      const encrypted = typeof raw === 'string' && isEncryptedField(raw)
+        ? raw
+        : typeof raw === 'object' && isEncryptedField(raw.$enc)
+          ? raw.$enc
+          : null;
+      if (encrypted === null) return raw;
       try {
-        if (typeof raw === 'string' && isEncryptedField(raw)) {
-          return JSON.parse(decryptField(raw));
-        }
-        if (typeof raw === 'object' && isEncryptedField(raw.$enc)) {
-          return JSON.parse(decryptField(raw.$enc));
-        }
+        return JSON.parse(decryptField(encrypted));
       } catch (err) {
         audit({ op: 'decrypt', field: fieldName, error: 'failed' });
+        throw new EncryptionError('Stored encrypted field failed authentication or decoding');
       }
-      return raw;
     },
     set(value) {
       if (value === null || value === undefined) {
