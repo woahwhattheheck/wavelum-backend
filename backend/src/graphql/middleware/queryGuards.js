@@ -118,7 +118,7 @@ function selectionsCost(selectionSet, fragments, stack, fieldCosts, defaultCost,
       }
       cost += sub * argMultiplier(selection, variables);
     } else if (selection.kind === Kind.INLINE_FRAGMENT) {
-      cost += selectionsCost(selection.selectionSet, fragments, stack, fieldCosts, defaultCost, variables, memo);
+      cost += selectionsCost(selection.selectionSet, fragments, stack, fieldCosts, defaultCost, variables, memo, costCap);
     } else if (selection.kind === Kind.FRAGMENT_SPREAD) {
       const name = selection.name.value;
       if (stack.includes(name)) return Number.MAX_SAFE_INTEGER;
