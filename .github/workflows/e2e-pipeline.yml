@@ -485,10 +485,12 @@ jobs:
   red-light:
     name: "RED LIGHT — Deployment Blocked"
     runs-on: ubuntu-latest
-    needs: [pipeline-clock, changes, lint, unit-tests, contract-tests, e2e-tests]
+    needs: [pipeline-clock, changes, lint, unit-tests, contract-tests, e2e-tests, green-light]
     timeout-minutes: 2
     if: |
       always() && (
+        needs.green-light.result == 'failure' ||
+        needs.green-light.result == 'cancelled' ||
         needs.pipeline-clock.result == 'failure' ||
         needs.pipeline-clock.result == 'cancelled' ||
         needs.changes.result == 'failure' ||
@@ -530,6 +532,7 @@ jobs:
           echo "║   One or more quality gates failed.                  ║"
           echo "║   Fix failing jobs before deploying.                 ║"
           echo "║                                                      ║"
+          echo "║   Final:     ${{ needs.green-light.result }}"
           echo "║   Clock:     ${{ needs.pipeline-clock.result }}"
           echo "║   Path scan: ${{ needs.changes.result }}"
           echo "║   Lint:      ${{ needs.lint.result }}"
