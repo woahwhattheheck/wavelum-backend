@@ -16,9 +16,14 @@
  *   - fragment spreads and inline fragments are resolved into the
  *     operation; recursive fragment cycles are rejected outright
  */
-const { GraphQLError, Kind } = require('graphql');
+const { GraphQLError, Kind, valueFromASTUntyped } = require('graphql');
 
 const LIST_SIZE_ARGS = new Set(['first', 'last', 'limit', 'take', 'pageSize']);
+const NESTED_PAGINATION_FIELDS = new Set([
+  'vestingHistory',
+  'claimHistory',
+  'searchVestingSchedules',
+]);
 
 function selectionsDepth(selectionSet, fragments, stack, depth, memo = new Map(), depthCap = Infinity) {
   let max = depth;
@@ -107,6 +112,61 @@ function argMultiplier(fieldNode, variables) {
   return multiplier;
 }
 
+function paginationCostMultiplier(fieldNode, variables) {
+  if (!NESTED_PAGINATION_FIELDS.has(fieldNode.name.value)) return 1;
+
+  const arg = (fieldNode.arguments || []).find((item) => item.name.value === 'pagination');
+  if (!arg) return 1;
+
+  // Static validation cannot resolve request variables. Still price any
+  // literal first/last value we can see; defer a wholly variable size to the
+  // request-time plugin, where variables are available.
+  if (variables === undefined) {
+    if (arg.value.kind === Kind.VARIABLE) return 1;
+    if (arg.value.kind !== Kind.OBJECT) return Number.MAX_SAFE_INTEGER;
+
+    let multiplier = null;
+    let deferred = false;
+    for (const field of arg.value.fields || []) {
+      if (field.name.value !== 'first' && field.name.value !== 'last') continue;
+      if (field.value.kind === Kind.VARIABLE) {
+        deferred = true;
+        continue;
+      }
+      if (field.value.kind !== Kind.INT) return Number.MAX_SAFE_INTEGER;
+      const n = Number(field.value.value);
+      if (!Number.isSafeInteger(n) || n < 0) return Number.MAX_SAFE_INTEGER;
+      multiplier = multiplier === null ? n : Math.max(multiplier, n);
+    }
+    if (multiplier !== null) return Math.max(1, multiplier);
+    if (deferred) return 1;
+    // PaginationInput.first defaults to 50 when the object is present but
+    // neither first nor last supplies a concrete bound.
+    return 50;
+  }
+
+  let pagination;
+  try {
+    pagination = valueFromASTUntyped(arg.value, variables);
+  } catch {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  if (pagination === undefined || pagination === null ||
+      typeof pagination !== 'object' || Array.isArray(pagination)) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  const sizes = [];
+  for (const name of ['first', 'last']) {
+    const n = pagination[name];
+    if (n === undefined || n === null) continue;
+    if (!Number.isSafeInteger(n) || n < 0) return Number.MAX_SAFE_INTEGER;
+    sizes.push(n);
+  }
+  const multiplier = sizes.length ? Math.max(...sizes) : 50;
+  return Math.max(1, multiplier);
+}
+
 function selectionsCost(selectionSet, fragments, stack, fieldCosts, defaultCost, variables, memo = new Map(), costCap = Number.MAX_SAFE_INTEGER) {
   let cost = 0;
   for (const selection of selectionSet.selections) {
@@ -116,7 +176,11 @@ function selectionsCost(selectionSet, fragments, stack, fieldCosts, defaultCost,
       if (selection.selectionSet) {
         sub += selectionsCost(selection.selectionSet, fragments, stack, fieldCosts, defaultCost, variables, memo, costCap);
       }
-      cost += sub * argMultiplier(selection, variables);
+      const multiplier = Math.max(
+        argMultiplier(selection, variables),
+        paginationCostMultiplier(selection, variables)
+      );
+      cost += sub * multiplier;
     } else if (selection.kind === Kind.INLINE_FRAGMENT) {
       cost += selectionsCost(selection.selectionSet, fragments, stack, fieldCosts, defaultCost, variables, memo, costCap);
     } else if (selection.kind === Kind.FRAGMENT_SPREAD) {
@@ -194,9 +258,8 @@ function runtimeCostLimitPlugin({ maxCost, fieldCosts = {}, defaultCost = 1 }) {
           );
           for (const def of operation.variableDefinitions || []) {
             const name = def.variable.name.value;
-            if (!Object.prototype.hasOwnProperty.call(variables, name) &&
-                def.defaultValue && def.defaultValue.kind === Kind.INT) {
-              variables[name] = Number(def.defaultValue.value);
+            if (!Object.prototype.hasOwnProperty.call(variables, name) && def.defaultValue) {
+              variables[name] = valueFromASTUntyped(def.defaultValue);
             }
           }
           const cost = selectionsCost(
