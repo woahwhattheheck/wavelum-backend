@@ -126,17 +126,19 @@ class SlidingWindowCounter {
 
   async hit(key, windowMs) {
     const now = this.now();
-    const client = this.clientProvider();
-
-    if (client) {
-      try {
+    try {
+      // Redis client construction or configuration can fail synchronously.
+      // Guard provider acquisition as well as the Redis command pipeline so
+      // malformed/unavailable Redis cannot turn every API request into a 500.
+      const client = this.clientProvider();
+      if (client) {
         return await this._redisHit(client, key, now, windowMs);
-      } catch (error) {
-        logger.warn(
-          'Redis rate-limit check failed; using local fallback:',
-          error.message,
-        );
       }
+    } catch (error) {
+      logger.warn(
+        'Redis rate-limit check failed; using local fallback:',
+        error instanceof Error ? error.message : String(error),
+      );
     }
 
     return this._memoryHit(key, now, windowMs);
