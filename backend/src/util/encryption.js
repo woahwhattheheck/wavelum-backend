@@ -215,10 +215,19 @@ function decryptLegacyObject(legacy) {
     throw new EncryptionError('Malformed legacy encrypted payload: invalid IV, tag, or ciphertext');
   }
   const hex = process.env.PII_ENCRYPTION_KEY;
-  if (!hex) {
-    throw new EncryptionError('Legacy payload requires PII_ENCRYPTION_KEY');
+  let key;
+  if (hex) {
+    key = decodeKey('legacy', hex);
+  } else {
+    // During migration from the legacy single-key setting to the versioned
+    // key ring, operators may move the same raw key to v1 and remove the
+    // redundant legacy setting. Legacy rows must remain readable in that
+    // documented configuration.
+    key = getKeyRing().get('v1');
+    if (!key) {
+      throw new EncryptionError('Legacy payload requires PII_ENCRYPTION_KEY or a configured v1 key');
+    }
   }
-  const key = decodeKey('legacy', hex);
   try {
     return gcmDecrypt(
       key,
