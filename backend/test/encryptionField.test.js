@@ -391,5 +391,18 @@ describe('encryptedTextField codec', () => {
 
     expect(() => get.call(record)).toThrow(EncryptionError);
   });
+
+  it('rejects truncated versioned text markers without blocking ordinary legacy notes', () => {
+    const { get } = encryptedTextField('note');
+    const record = fakeRecord();
+
+    for (const malformed of ['v2.truncated', 'v2.']) {
+      record._data.note = malformed;
+      expect(() => get.call(record)).toThrow(EncryptionError);
+    }
+
+    record._data.note = 'legacy review note for v2 release';
+    expect(get.call(record)).toBe('legacy review note for v2 release');
+  });
 });
 

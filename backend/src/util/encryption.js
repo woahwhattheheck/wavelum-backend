@@ -286,6 +286,12 @@ function isEncryptedField(value) {
   return typeof value === 'string' && PAYLOAD_PATTERN.test(value.trim());
 }
 
+function looksLikeEncryptedFieldMarker(value) {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  return /^v[1-9]\d*\.[A-Za-z0-9+/=]*(?:\.|$)/.test(trimmed);
+}
+
 /**
  * Re-encrypts a stored payload under the current key version.
  * Accepts versioned payloads and legacy objects. No-ops when already current.
@@ -375,6 +381,10 @@ function encryptedTextField(fieldName) {
     get() {
       const raw = this.getDataValue(fieldName);
       if (raw === null || raw === undefined) return raw;
+      if (looksLikeEncryptedFieldMarker(raw) && !isEncryptedField(raw)) {
+        audit({ op: 'decrypt', field: fieldName, error: 'failed' });
+        throw new EncryptionError('Stored encrypted field failed authentication or decoding');
+      }
       if (!isEncryptedField(raw)) return raw;
       try {
         return decryptField(raw);
