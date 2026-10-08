@@ -50,3 +50,16 @@ A bounded variable (e.g. `count: 10`) is allowed; `count: 600` on a
 two-field query exceeds 1000 points and is rejected. Missing, invalid,
 negative, or non-integer list-size variables fail closed instead of being
 silently treated as multiplier 1. Non-pagination variables have no cost impact.
+
+## Apollo Studio usage reporting (optional deployment configuration)
+
+The GraphQL server in `src/graphql/server.js` uses **Apollo Server 3** (`apollo-server-express`). Apollo Server 3 already includes a built-in usage reporting plugin, automatically enabled when **both** of the following deployment environment variables are configured:
+
+- `APOLLO_KEY`: a **graph/service** API key stored in the deployment's secret manager, not in source control or client code.
+- `APOLLO_GRAPH_REF`: the graph and variant reference, for example `vesting-vault@production` (replace with the actual registered graph ref).
+
+There is **no additional plugin or package to install** and no Apollo credentials are required to run the API without Studio. When the variables are absent, usage reporting is disabled. Setting only the key does not establish working reporting; configure both values. The default plugin redacts GraphQL variable values from usage traces (`sendVariableValues: { none: true }`); do not replace it with an all-values policy on an API handling wallets, vaults, or private claims.
+
+The deployment owner can verify reporting in the appropriate Apollo Studio graph after starting the deployed server with both values, issuing a bounded non-sensitive GraphQL query, and allowing the normal batched reporting interval. This repository does **not** contain a deployed Studio key, registered graph ref, or proof of a live reporting receipt; do not describe reporting as active until the operator verifies ingestion. Keep the GraphQL depth (7), cost (1000), and rate limits enabled independently of Studio configuration.
+
+Reference: [Apollo Server 3 usage reporting plugin](https://www.apollographql.com/docs/apollo-server/v3/api/plugin/usage-reporting/).
