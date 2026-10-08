@@ -3,6 +3,7 @@ const redis = require('redis');
 const winston = require('winston');
 const cron = require('node-cron');
 const { Client } = require('pg');
+const { measureReplicationLag } = require('./walLag');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -146,12 +147,27 @@ async function performHealthCheck() {
         const replicaLag = await checkReplicaLag(config.replicas[i]);
         const masterLsn = await getMasterLsn();
         
+        replicaHealth.lagThreshold = config.lagThreshold;
         if (replicaLag.lag && masterLsn.lsn) {
-          // Calculate lag in bytes (simplified)
-          const lagBytes = Math.abs(parseInt(replicaLag.lag.replace(/\//g, ''), 16) - parseInt(masterLsn.lsn.replace(/\//g, ''), 16));
-          replicaHealth.lag = lagBytes;
-          replicaHealth.lagThreshold = config.lagThreshold;
-          replicaHealth.lagExceeded = lagBytes > config.lagThreshold;
+          try {
+            const measured = measureReplicationLag(
+              masterLsn.lsn, replicaLag.lag, config.lagThreshold
+            );
+            replicaHealth.lag = measured.lag;
+            replicaHealth.lagExceeded = measured.lagExceeded;
+            if (measured.error) replicaHealth.lagError = measured.error;
+          } catch (error) {
+            replicaHealth.lag = null;
+            replicaHealth.lagExceeded = true;
+            replicaHealth.lagError = error.message;
+          }
+        } else {
+          // An unavailable replica/master WAL position must never be
+          // reported as healthy with a silently missing lag measurement.
+          replicaHealth.lag = null;
+          replicaHealth.lagExceeded = true;
+          replicaHealth.lagError =
+            replicaLag.error || masterLsn.error || 'Replication WAL position unavailable';
         }
       }
       
