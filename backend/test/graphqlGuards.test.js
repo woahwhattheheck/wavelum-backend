@@ -112,7 +112,8 @@ describe('costLimitRule', () => {
     const q = '{ users(first: 600) { name posts { title } } }';
     const errs = errors(q, [rule()]);
     expect(errs).toHaveLength(1);
-    expect(errs[0]).toMatch(/estimated cost: 2400/);
+    // Saturating at maxCost + 1 avoids traversing the rest of an expensive tree.
+    expect(errs[0]).toMatch(/estimated cost: 1001/);
   });
 
   it('does not multiply when list args are small', () => {
