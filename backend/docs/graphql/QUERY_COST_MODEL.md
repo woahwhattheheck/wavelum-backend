@@ -23,8 +23,10 @@ An operation's estimated cost must not exceed **1000 points**:
   `(1 + 1 + (1 + 1)) * 600 = 2400`.
 - The vesting connection fields `vestingHistory`, `claimHistory`, and
   `searchVestingSchedules` also price their nested `pagination: PaginationInput`
-  object. `first`/`last` contribute the list multiplier; if a pagination
-  object supplies neither bound, the schema's `first: 50` default is used.
+  object. `first`/`last` contribute the list multiplier; if the entire
+  pagination argument or just its `first` member is omitted, the schema's
+  `first: 50` default is charged. A `last: 4` object still inherits
+  `first: 50`; only an explicit `first` overrides that default.
   Object literals are priced during validation, while object/scalar variables
   and GraphQL variable defaults are re-priced in the request-time hook.
 - Field-level overrides can be registered in the `fieldCosts` map passed
