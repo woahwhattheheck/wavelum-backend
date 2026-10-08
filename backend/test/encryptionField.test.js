@@ -6,6 +6,7 @@ const {
   rotateField,
   isEncryptedField,
   encryptedJsonField,
+  encryptedTextField,
   setAuditHook,
   encrypt,
   decrypt,
@@ -333,3 +334,42 @@ describe('encryptedJsonField codec (used by KycStatus.sep12_response_data)', () 
     expect(get.call(record)).toBeNull();
   });
 });
+
+describe('encryptedTextField codec', () => {
+  function fakeRecord() {
+    const data = {};
+    return {
+      getDataValue: (k) => data[k],
+      setDataValue: (k, v) => { data[k] = v; },
+      _data: data,
+    };
+  }
+
+  it('encrypts new text writes while keeping legacy plaintext rows readable', () => {
+    const { get, set } = encryptedTextField('note');
+    const record = fakeRecord();
+
+    record._data.note = 'legacy review note';
+    expect(get.call(record)).toBe('legacy review note');
+
+    set.call(record, 'new review note');
+    expect(isEncryptedField(record._data.note)).toBe(true);
+    expect(record._data.note).not.toContain('new review note');
+    expect(get.call(record)).toBe('new review note');
+  });
+
+  it('rejects damaged encrypted text instead of exposing stored payload data', () => {
+    const { get, set } = encryptedTextField('note');
+    const record = fakeRecord();
+    set.call(record, 'protected review note');
+
+    const parts = record._data.note.split('.');
+    const tag = Buffer.from(parts[3], 'base64');
+    tag[0] ^= 1;
+    parts[3] = tag.toString('base64');
+    record._data.note = parts.join('.');
+
+    expect(() => get.call(record)).toThrow(EncryptionError);
+  });
+});
+
