@@ -121,6 +121,29 @@ describe('runtimeCostLimitPlugin', () => {
     await expect(runCostCheck(query, { count: 600 })).rejects.toThrow(/maximum query cost of 1000/);
   });
 
+
+  it('rejects exponential acyclic fragment DAGs without expanding every occurrence', async () => {
+    // 24 fragments, each spreading the previous fragment twice: only ~50 AST
+    // spread nodes but over 16 million logical leaf occurrences.
+    const fragments = ['fragment F0 on User { id }'];
+    for (let level = 1; level <= 24; level += 1) {
+      fragments.push(
+        'fragment F' + level + ' on User { ...F' + (level - 1) +
+        ' ...F' + (level - 1) + ' }'
+      );
+    }
+    const query = 'query Shared { user(id: "1") { ...F24 } }\n' +
+      fragments.join('\n');
+
+    // Fragment reuse must not inflate the structural depth.
+    expect(errors(query, [depthLimitRule(7)])).toEqual([]);
+    // But each spread still contributes cost, even if its AST was memoized.
+    const errs = errors(query, [costLimitRule({ maxCost: 1000 })]);
+    expect(errs).toHaveLength(1);
+    expect(errs[0]).toMatch(/estimated cost: 16777217/);
+    await expect(runCostCheck(query, {})).rejects.toThrow(/maximum query cost of 1000/);
+  });
+
   it('honors default variable values but fails closed on missing list sizes', async () => {
     const withDefault = 'query Page($count: Int = 10) { users(first: $count) { id } }';
     await expect(runCostCheck(withDefault, {})).resolves.toBeUndefined();
