@@ -28,7 +28,9 @@
     "migrate:down": "knex migrate:down",
     "health-check": "node migrations/healthChecker.js",
     "swagger:generate": "GENERATE_SWAGGER=true node -e \"require('./src/utils/swaggerGenerator').generateSwagger()\"",
-    "docs": "npm run swagger:generate && echo 'Documentation available at http://localhost:3000/api/docs'"
+    "docs": "npm run swagger:generate && echo 'Documentation available at http://localhost:3000/api/docs'",
+    "deps:check": "node scripts/check-dependency-ranges.js",
+    "deps:report": "node scripts/report-dependencies.js"
   },
   "dependencies": {
     "@apollo/server": "^4.10.0",

@@ -196,6 +196,53 @@ If you encounter issues:
 3. Ensure Docker and Docker Compose are up to date
 4. Check that ports 3000, 5432, and 6379 are available
 
+## Dependency Management
+
+The repository is a multi-package layout; it is intentionally **not**
+consolidated into a single `package.json`:
+
+| Directory         | Role                                                        |
+| ----------------- | ----------------------------------------------------------- |
+| `.` (root)        | Orchestrator API (`index.js`), workers and ops scripts      |
+| `backend/`        | Main backend service — the primary CI install path          |
+| `legacy_cleanup/` | Frozen legacy archive — preserved verbatim, not gated by CI |
+
+### Lockfiles
+
+- Every package directory must commit its `package-lock.json`. `npm ci` in
+  CI and fresh clones depends on it.
+- Regenerate a lockfile after changing `package.json` with
+  `npm install --package-lock-only`; never hand-edit lockfile entries.
+- The `dependency-audit` CI job blocks on lockfile/package.json drift for
+  the root and `backend/` packages via `npm ci --dry-run` plus
+  `scripts/check-dependency-ranges.js`.
+
+### Version ranges
+
+- Use **caret** ranges (`^x.y.z`) for normal dependencies — reproducible
+  installs come from the lockfile, not the specifier.
+- Use **exact** versions (`x.y.z`) where a fixed pin is intentional
+  (e.g. security-sensitive or API-locked packages).
+- Forbidden in active packages: `*`, `latest`, comparators (`>=`, `>`),
+  tilde ranges, and git/HTTP URLs. `check-dependency-ranges.js` fails CI
+  on violations.
+- `peerDependencies` in this repo are relaxed by `.npmrc`
+  (`legacy-peer-deps=true`). Root pins `express@^5` while
+  `apollo-server-express@3` still declares an `express@^4` peer — known
+  debt; do not bump/downgrade either without migrating the GraphQL
+  server to `@apollo/server` v4/v5.
+
+### Audits and licenses
+
+- `scripts/report-dependencies.js` prints dependency counts, a license
+  distribution, copyleft/GPL/AGPL alerts and deprecation notices — all
+  **report-only** in CI.
+- `npm audit` CVE scanning lives in `vulnerability-scan.yml`; this repo
+  keeps license/deprecation reporting separate so policy alerts never
+  block unrelated work.
+- Before adding a dependency, prefer `MIT`/`Apache-2.0`/`BSD`/`ISC`
+  licenses and avoid deprecated packages.
+
 ## Code Style Guidelines
 
 - Use ESLint for JavaScript code formatting
