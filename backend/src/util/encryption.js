@@ -142,11 +142,13 @@ function gcmDecrypt(key, iv, tag, ciphertext) {
 }
 
 function decodeSegment(name, segment) {
-  try {
-    return Buffer.from(segment, 'base64');
-  } catch {
+  // Buffer.from silently accepts truncated or noncanonical base64. The
+  // versioned writer emits canonical base64, so reject alternate encodings.
+  const decoded = Buffer.from(segment, 'base64');
+  if (decoded.toString('base64') !== segment) {
     throw new EncryptionError(`Malformed encrypted payload: bad ${name}`);
   }
+  return decoded;
 }
 
 /**
@@ -180,18 +182,19 @@ function decryptVersioned(payload) {
   if (!masterKey) {
     throw new EncryptionError(`No configured key for payload version ${version}`);
   }
-  const key = deriveKey(
-    masterKey,
-    decodeSegment('salt', saltB64)
-  );
+  const salt = decodeSegment('salt', saltB64);
+  const iv = decodeSegment('iv', ivB64);
+  const tag = decodeSegment('tag', tagB64);
+  const ciphertext = decodeSegment('ciphertext', ctB64);
+  // Every encrypted payload written here has a 128-bit GCM tag. Allowing
+  // shorter tags would silently weaken authenticity of stored PII.
+  if (salt.length !== SALT_LENGTH || iv.length !== IV_LENGTH || tag.length !== 16) {
+    throw new EncryptionError('Malformed encrypted payload: invalid salt, IV, or tag length');
+  }
+  const key = deriveKey(masterKey, salt);
   try {
     return {
-      plaintext: gcmDecrypt(
-        key,
-        decodeSegment('iv', ivB64),
-        decodeSegment('tag', tagB64),
-        decodeSegment('ciphertext', ctB64)
-      ),
+      plaintext: gcmDecrypt(key, iv, tag, ciphertext),
       keyVersion: version,
     };
   } catch {
@@ -272,6 +275,9 @@ function rotateField(payload, options = {}) {
   if (typeof payload === 'string') {
     const match = PAYLOAD_PATTERN.exec(payload.trim());
     if (match && `v${match[1]}` === current && !options.force) {
+      // A same-version payload is only a no-op after its authentication tag
+      // has been verified; otherwise corruption bypasses rotation checks.
+      decryptField(payload);
       return payload;
     }
   }
