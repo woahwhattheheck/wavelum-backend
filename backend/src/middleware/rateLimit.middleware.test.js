@@ -5,6 +5,7 @@ const {
   SlidingWindowCounter,
   createRateLimiter,
   getGlobalIdentity,
+  getAuthIdentity,
   resolveRateLimitConfig,
 } = require('./rateLimit.middleware');
 
@@ -44,6 +45,37 @@ describe('rateLimit.middleware', () => {
     const result = await counter.hit('ip:test', 60000);
 
     expect(result.totalHits).toBe(2);
+  });
+
+  test('uses the observed socket IP instead of a forged forwarded header', () => {
+    const config = { windowMs: 60000, ipMax: 100, userMax: 100, authMax: 10 };
+    const actual = { socket: { remoteAddress: '192.0.2.7' }, method: 'POST', originalUrl: '/login' };
+    const first = getAuthIdentity({
+      ...actual,
+      headers: { 'x-forwarded-for': '203.0.113.1' },
+    }, config);
+    const second = getAuthIdentity({
+      ...actual,
+      headers: { 'x-forwarded-for': '203.0.113.2' },
+    }, config);
+    expect(first.key).toBe(second.key);
+  });
+
+  test('does not treat a failed Redis INCR reply as zero requests', async () => {
+    const transaction = {
+      incr() { return this; },
+      expire() { return this; },
+      get() { return this; },
+      exec: async () => [[new Error('INCR failed'), null], [null, 1], [null, 0]],
+    };
+    const counter = new SlidingWindowCounter({
+      now: () => 1000,
+      clientProvider: () => ({ multi: () => transaction }),
+    });
+    // The existing local fallback must count requests when a pipeline
+    // command fails, instead of using an invalid Redis response as zero.
+    expect((await counter.hit('ip:partial-error', 60000)).totalHits).toBe(1);
+    expect((await counter.hit('ip:partial-error', 60000)).totalHits).toBe(2);
   });
 
   test('keys authenticated requests by verified user identity', () => {
