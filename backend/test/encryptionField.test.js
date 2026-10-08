@@ -326,6 +326,26 @@ describe('encryptedJsonField codec (used by KycStatus.sep12_response_data)', () 
     expect(() => get.call(record)).toThrow(EncryptionError);
   });
 
+  it('rejects truncated and invalid encrypted JSON envelopes instead of treating them as plaintext', () => {
+    const { get } = encryptedJsonField('f');
+    const record = fakeRecord();
+
+    for (const malformed of [
+      { $enc: 'v2.truncated' },
+      { $enc: 'v2.' },
+      { $enc: null },
+      { $enc: 123 },
+    ]) {
+      record._data.f = malformed;
+      expect(() => get.call(record)).toThrow(EncryptionError);
+    }
+
+    // An ordinary historical JSON document with no encryption marker is
+    // still readable for backward compatibility.
+    record._data.f = { review_status: 'legacy' };
+    expect(get.call(record)).toEqual({ review_status: 'legacy' });
+  });
+
   it('passes null through on write and read', () => {
     const { get, set } = encryptedJsonField('f');
     const record = fakeRecord();
