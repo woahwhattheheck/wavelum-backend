@@ -86,6 +86,27 @@ describe('costLimitRule', () => {
     expect(errors(q, [rule()])[0]).toMatch(/maximum query cost of 1000/);
   });
 
+  it('stops traversing expensive selections once the budget is exceeded', () => {
+    // The operation is already over budget after the first 501 user/id pairs.
+    // Accessing the per-field cost of later aliases would be unnecessary work.
+    // The proxy detects a missing early cutoff without timing assertions.
+    const costs = new Proxy({}, {
+      get(_target, name) {
+        if (typeof name === 'string' && /^f\\d+$/.test(name) &&
+            Number(name.slice(1)) > 1050) {
+          throw new Error('Traversed fields after the cost budget was exceeded');
+        }
+        return undefined;
+      }
+    });
+    const query = '{ ' + Array.from({ length: 1400 }, (_v, i) =>
+      'f' + i + ': user { id }'
+    ).join(' ') + ' }';
+    const result = errors(query, [costLimitRule({ maxCost: 1000, fieldCosts: costs })]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatch(/maximum query cost of 1000/);
+  });
+
   it('multiplies subtree cost by list-size arguments', () => {
     // users(1) + name(1) + posts(1)+title(1) => subtree cost 4, x 600 = 2400
     const q = '{ users(first: 600) { name posts { title } } }';
@@ -149,7 +170,8 @@ describe('runtimeCostLimitPlugin', () => {
     // But each spread still contributes cost, even if its AST was memoized.
     const errs = errors(query, [costLimitRule({ maxCost: 1000 })]);
     expect(errs).toHaveLength(1);
-    expect(errs[0]).toMatch(/estimated cost: 16777217/);
+    // The cost guard can stop once this request is irreversibly over budget.
+    expect(errs[0]).toMatch(/estimated cost: 1001/);
     await expect(runCostCheck(query, {})).rejects.toThrow(/maximum query cost of 1000/);
   });
 
