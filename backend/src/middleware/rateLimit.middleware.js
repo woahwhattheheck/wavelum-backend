@@ -24,13 +24,10 @@ const hashKey = (value) =>
   crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, 32);
 
 const getClientIp = (req) => {
-  if (req.ip) return req.ip;
-
-  const forwarded = req.headers?.['x-forwarded-for'];
-  if (typeof forwarded === 'string' && forwarded.trim()) {
-    return forwarded.split(',')[0].trim();
-  }
-  return req.socket?.remoteAddress || req.connection?.remoteAddress || 'unknown';
+  // Express resolves req.ip using its configured trust-proxy policy. Never
+  // fall back to raw X-Forwarded-For; an untrusted caller controls that header.
+  return req.ip || req.socket?.remoteAddress ||
+    req.connection?.remoteAddress || 'unknown';
 };
 
 const getAuthenticatedSubject = (req) => {
@@ -111,8 +108,19 @@ class SlidingWindowCounter {
       .get(previousKey)
       .exec();
 
-    const currentCount = Number(results?.[0]?.[1] || 0);
-    const previousCount = Number(results?.[2]?.[1] || 0);
+    // Redis MULTI can return an error for an individual command while exec()
+    // itself resolves successfully. Treating that failed INCR as zero gives
+    // callers an unmetered request instead of entering the existing fallback.
+    if (!Array.isArray(results) || results.length !== 3 ||
+        results.some((reply) => !Array.isArray(reply) || reply[0] != null)) {
+      throw new Error('Redis rate-limit transaction failed');
+    }
+    const currentCount = Number(results[0][1]);
+    const previousCount = Number(results[2][1] || 0);
+    if (!Number.isSafeInteger(currentCount) || currentCount < 1 ||
+        !Number.isSafeInteger(previousCount) || previousCount < 0) {
+      throw new Error('Redis rate-limit counter response invalid');
+    }
     return this._result(currentCount, previousCount, now, windowMs);
   }
 
