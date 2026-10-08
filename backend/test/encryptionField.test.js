@@ -89,6 +89,19 @@ describe('encryptField / decryptField', () => {
     expect(() => decryptField(parts.join('.'))).toThrow(EncryptionError);
   });
 
+  it('rejects truncated authentication tags even when their prefix is genuine', () => {
+    const parts = encryptField('protected').split('.');
+    const originalTag = Buffer.from(parts[3], 'base64');
+    parts[3] = originalTag.subarray(0, 4).toString('base64');
+    expect(() => decryptField(parts.join('.'))).toThrow(EncryptionError);
+  });
+
+  it('rejects a noncanonical versioned base64 segment', () => {
+    const parts = encryptField('protected').split('.');
+    parts[1] += '=';
+    expect(() => decryptField(parts.join('.'))).toThrow(EncryptionError);
+  });
+
   it('rejects malformed payloads', () => {
     expect(() => decryptField('not-a-payload')).toThrow(EncryptionError);
     expect(() => decryptField('v9.')).toThrow(EncryptionError);
@@ -132,6 +145,14 @@ describe('rotateField', () => {
   it('is a no-op when the payload already uses the current version', () => {
     const payload = encryptField('current');
     expect(rotateField(payload)).toBe(payload);
+  });
+
+  it('authenticates an already-current payload before skipping rotation', () => {
+    const parts = encryptField('untampered').split('.');
+    const tag = Buffer.from(parts[3], 'base64');
+    tag[0] ^= 1;
+    parts[3] = tag.toString('base64');
+    expect(() => rotateField(parts.join('.'))).toThrow(EncryptionError);
   });
 
   it('upgrades a legacy object payload', () => {
