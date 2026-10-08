@@ -92,7 +92,7 @@ describe('costLimitRule', () => {
     // The proxy detects a missing early cutoff without timing assertions.
     const costs = new Proxy({}, {
       get(_target, name) {
-        if (typeof name === 'string' && /^f\\d+$/.test(name) &&
+        if (typeof name === 'string' && /^f\d+$/.test(name) &&
             Number(name.slice(1)) > 1050) {
           throw new Error('Traversed fields after the cost budget was exceeded');
         }
