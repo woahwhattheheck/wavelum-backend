@@ -504,6 +504,23 @@ jobs:
       )
 
     steps:
+      - name: Report total pipeline duration
+        env:
+          STARTED_AT: ${{ needs.pipeline-clock.outputs.started_at }}
+        run: |
+          elapsed=$(( $(date +%s) - STARTED_AT ))
+          echo "::notice title=Pipeline duration::${elapsed}s elapsed (target <1800s; overall ceiling <2700s)"
+          {
+            echo "### Pipeline duration"
+            echo "- Duration: ${elapsed}s"
+            echo "- SLA: <1800s (30 minutes)"
+            echo "- Overall ceiling: <2700s (45 minutes)"
+            echo "- Result: blocked"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$elapsed" -ge 1800 ]; then
+            echo "::error title=Pipeline SLA exceeded::Pipeline took ${elapsed}s; target is <1800s."
+          fi
+
       - name: Report blocking failures
         run: |
           echo "╔══════════════════════════════════════════════════════╗"
