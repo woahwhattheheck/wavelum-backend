@@ -1,7 +1,7 @@
 const logger = require('../utils/logger');
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../database/connection');
-const { encryptedJsonField } = require('../util/encryption');
+const { encryptedJsonField, encryptedTextField } = require('../util/encryption');
 
 /**
  * KycStatus - Model for tracking KYC/AML verification status and expiration
@@ -108,6 +108,7 @@ const KycStatus = sequelize.define('KycStatus', {
     type: DataTypes.TEXT,
     allowNull: true,
     comment: 'Reason for soft-lock activation',
+    ...encryptedTextField('soft_lock_reason'),
   },
   soft_lock_date: {
     type: DataTypes.DATE,
@@ -159,6 +160,7 @@ const KycStatus = sequelize.define('KycStatus', {
     type: DataTypes.TEXT,
     allowNull: true,
     comment: 'Internal compliance notes and observations',
+    ...encryptedTextField('compliance_notes'),
   },
   manual_review_required: {
     type: DataTypes.BOOLEAN,
