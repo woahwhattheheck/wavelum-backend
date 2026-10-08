@@ -55,10 +55,16 @@ let redisClient;
 
 async function initializeRedis() {
   try {
-    redisClient = redis.createClient(config.redis);
+    // node-redis v4 requires transport settings under socket; plain
+    // {host,port} silently selects localhost and breaks Compose deployments.
+    redisClient = redis.createClient({
+      socket: { host: config.redis.host, port: Number(config.redis.port) }
+    });
     await redisClient.connect();
     logger.info('Connected to Redis');
   } catch (error) {
+    // Redis is an optional cache, not the source of database health.
+    redisClient = null;
     logger.error('Failed to connect to Redis:', error);
   }
 }
@@ -189,8 +195,12 @@ async function performHealthCheck() {
     }
 
     // Cache results in Redis
-    if (redisClient) {
-      await redisClient.setEx('db_health_status', 60, JSON.stringify(healthStatus));
+    if (redisClient?.isReady) {
+      try {
+        await redisClient.setEx('db_health_status', 60, JSON.stringify(healthStatus));
+      } catch (error) {
+        logger.warn('Health-status cache write failed; database probe remains authoritative', error.message);
+      }
     }
 
     logger.info('Health check completed', { overall: healthStatus.overall });
@@ -222,18 +232,18 @@ app.get('/health', async (req, res) => {
 
 app.get('/health/cached', async (req, res) => {
   try {
-    if (redisClient) {
-      const cached = await redisClient.get('db_health_status');
-      if (cached) {
-        res.json(JSON.parse(cached));
-      } else {
-        const health = await performHealthCheck();
-        res.json(health);
+    if (redisClient?.isReady) {
+      try {
+        const cached = await redisClient.get('db_health_status');
+        if (cached) {
+          return res.json(JSON.parse(cached));
+        }
+      } catch (error) {
+        logger.warn('Health cache unavailable; checking live database status', error.message);
       }
-    } else {
-      const health = await performHealthCheck();
-      res.json(health);
     }
+    const health = await performHealthCheck();
+    res.status(health.overall === 'healthy' || health.overall === 'degraded' ? 200 : 503).json(health);
   } catch (error) {
     res.status(503).json({ 
       overall: 'error', 
