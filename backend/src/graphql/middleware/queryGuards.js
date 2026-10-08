@@ -116,7 +116,9 @@ function paginationCostMultiplier(fieldNode, variables) {
   if (!NESTED_PAGINATION_FIELDS.has(fieldNode.name.value)) return 1;
 
   const arg = (fieldNode.arguments || []).find((item) => item.name.value === 'pagination');
-  if (!arg) return 1;
+  // These three resolvers default to first=50 even when callers provide no
+  // pagination argument. An unpriced default permits wide cheap-looking queries.
+  if (!arg) return 50;
 
   // Static validation cannot resolve request variables. Still price any
   // literal first/last value we can see; defer a wholly variable size to the
@@ -125,10 +127,14 @@ function paginationCostMultiplier(fieldNode, variables) {
     if (arg.value.kind === Kind.VARIABLE) return 1;
     if (arg.value.kind !== Kind.OBJECT) return Number.MAX_SAFE_INTEGER;
 
-    let multiplier = null;
+    let first = null;
+    let last = null;
+    let explicitFirst = false;
     let deferred = false;
     for (const field of arg.value.fields || []) {
-      if (field.name.value !== 'first' && field.name.value !== 'last') continue;
+      const name = field.name.value;
+      if (name !== 'first' && name !== 'last') continue;
+      if (name === 'first') explicitFirst = true;
       if (field.value.kind === Kind.VARIABLE) {
         deferred = true;
         continue;
@@ -136,12 +142,15 @@ function paginationCostMultiplier(fieldNode, variables) {
       if (field.value.kind !== Kind.INT) return Number.MAX_SAFE_INTEGER;
       const n = Number(field.value.value);
       if (!Number.isSafeInteger(n) || n < 0) return Number.MAX_SAFE_INTEGER;
-      multiplier = multiplier === null ? n : Math.max(multiplier, n);
+      if (name === 'first') first = n;
+      else last = n;
     }
-    if (multiplier !== null) return Math.max(1, multiplier);
+    // GraphQL applies PaginationInput.first = 50 when first is absent, even
+    // when an object supplies last: 4. Price this default in both cases.
+    if (!explicitFirst) first = 50;
+    const known = [first, last].filter((n) => n !== null);
+    if (known.length) return Math.max(1, ...known);
     if (deferred) return 1;
-    // PaginationInput.first defaults to 50 when the object is present but
-    // neither first nor last supplies a concrete bound.
     return 50;
   }
 
@@ -156,7 +165,9 @@ function paginationCostMultiplier(fieldNode, variables) {
     return Number.MAX_SAFE_INTEGER;
   }
 
-  const sizes = [];
+  // GraphQL input-object coercion supplies first=50 when the member is
+  // omitted; valueFromASTUntyped does not apply schema input defaults.
+  const sizes = pagination.first === undefined ? [50] : [];
   for (const name of ['first', 'last']) {
     const n = pagination[name];
     if (n === undefined || n === null) continue;
