@@ -184,6 +184,26 @@ describe('legacy compatibility', () => {
     expect(decryptField(json)).toBe('json form');
   });
 
+  it('keeps legacy rows readable after moving the original key into the v1 key ring', () => {
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv('aes-256-gcm', Buffer.from(KEY_V1, 'hex'), iv);
+    const content = Buffer.concat([cipher.update('migrated legacy pii', 'utf8'), cipher.final()]);
+    const legacy = {
+      iv: iv.toString('hex'),
+      content: content.toString('hex'),
+      tag: cipher.getAuthTag().toString('hex'),
+    };
+
+    // Simulate the documented single-key -> versioned-ring migration: the old
+    // raw key now lives at v1 and the redundant legacy setting is removed.
+    delete process.env.PII_ENCRYPTION_KEY;
+    __resetKeyRingForTests();
+
+    expect(decryptField(legacy)).toBe('migrated legacy pii');
+    expect(decryptField(JSON.stringify(legacy))).toBe('migrated legacy pii');
+    expect(decryptField(rotateField(legacy))).toBe('migrated legacy pii');
+  });
+
   it('round-trips the original authenticated empty-string legacy format', () => {
     const iv = crypto.randomBytes(16);
     const cipher = crypto.createCipheriv('aes-256-gcm', Buffer.from(LEGACY_KEY, 'hex'), iv);
