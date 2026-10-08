@@ -1,10 +1,10 @@
-import { Injectable, NestMiddleware } from '@nestjs/common';
-import { ThrottlerService } from '@nestjs/throttler';
+import { Inject, Injectable, NestMiddleware } from '@nestjs/common';
+import { ThrottlerStorage } from '@nestjs/throttler';
 import { Request, Response, NextFunction } from 'express';
 
 @Injectable()
 export class ThrottlerMiddleware implements NestMiddleware {
-  constructor(private readonly throttlerService: ThrottlerService) {}
+  constructor(@Inject(ThrottlerStorage) private readonly throttlerStorage: ThrottlerStorage) {}
 
   async use(req: Request, res: Response, next: NextFunction) {
     const ip = req.ip || req.get('x-forwarded-for') || req.socket.remoteAddress;
@@ -14,8 +14,12 @@ export class ThrottlerMiddleware implements NestMiddleware {
     const throttlerName = isAuth ? 'auth' : 'global';
     
     try {
-      const { success } = await this.throttlerService.throttle(throttlerName, 1, ip || 'unknown');
-      if (!success) {
+      const ttl = 60000;
+      const limit = isAuth ? 10 : 100;
+      const { isBlocked } = await this.throttlerStorage.increment(
+        `${throttlerName}:${ip || 'unknown'}`, ttl, limit, ttl, throttlerName,
+      );
+      if (isBlocked) {
         return res.status(429).json({
           success: false,
           error: 'Too many requests. Please try again later.',

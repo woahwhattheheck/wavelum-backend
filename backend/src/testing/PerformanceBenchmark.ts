@@ -29,6 +29,7 @@ interface LoadTestScenario {
   params?: Record<string, any>;
   body?: any;
   thinkTime?: number; // Time between requests in ms
+  requestCount?: number; // Computed for distributed load scenarios
 }
 
 interface BenchmarkMetrics {

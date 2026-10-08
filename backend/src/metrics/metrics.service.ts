@@ -1,7 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectMetric } from '@willsoto/nestjs-prometheus';
 import { Gauge } from 'prom-client';
-import * as connection from '../database/connection';
+const connection = require('../database/connection');
 const indexingService = require('../services/indexingService');
 
 @Injectable()

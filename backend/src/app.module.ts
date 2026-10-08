@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { MetricsModule } from './metrics/metrics.module';
 import { WorkersModule } from './workers/workers.module';
 import { ThrottlerModule } from '@nestjs/throttler';
-import { ThrottlerStorageRedisService } from '@nestjs-redis/throttler-storage';
+import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import Redis from 'ioredis';
 
 @Module({

@@ -7,7 +7,7 @@ permissions:
   contents: write
 jobs:
   lockfile-and-typecheck:
-    if: github.event.head_commit.message == 'gf42-tsconfig-compiler-once-6c2'
+    if: github.event.head_commit.message == 'gf42-compiler-fix-6c2'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -15,6 +15,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Synchronize backend lockfile with declared dependencies
+        working-directory: backend
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Commit dependency lockfile change on original branch
+        run: |
+          git config user.name "woahwhattheheck"
+          git config user.email "brycembusiness2@gmail.com"
+          git add backend/package-lock.json
+          if ! git diff --cached --quiet; then
+            git commit -m "fix(gf42) lock runtime and test-helper dependencies for strict TS"
+            git push origin "HEAD:refs/heads/feat/grantfox42-strict-typescript-boundary-20261008-gpt6"
+          fi
       - name: One focused strict TypeScript compiler check
         working-directory: backend
         run: |
