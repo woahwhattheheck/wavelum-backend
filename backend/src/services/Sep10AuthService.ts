@@ -252,7 +252,16 @@ export class Sep10AuthService {
 
     const nonce = this.extractNonce(details.tx);
     const txHash = details.tx.hash().toString("hex");
-    const record = await this.challengeStore.consume(this.nonceKey(nonce));
+    let record: ChallengeRecord | null;
+    try {
+      record = await this.challengeStore.consume(this.nonceKey(nonce));
+    } catch {
+      throw new Sep10AuthError(
+        "sep10_replay_store_unavailable",
+        "Unable to atomically consume SEP-10 challenge replay state",
+        503,
+      );
+    }
 
     if (!record) {
       throw new Sep10AuthError(
