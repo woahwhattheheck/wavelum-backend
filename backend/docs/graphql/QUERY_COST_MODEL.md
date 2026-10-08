@@ -29,6 +29,14 @@ An operation's estimated cost must not exceed **1000 points**:
 Rejected operations return
 `Operation <name> exceeds the maximum query cost of 1000`.
 
+The guard stops pricing later fields or repeated fragment references once the
+operation already exceeds 1000 points, so an excessively wide query cannot
+force a complete walk merely to calculate its exact rejected cost. The
+`estimated cost` shown with a rejection is a **lower bound** (1001 when
+truncated), not necessarily the full cost of an abusive operation. Both
+validation-time literal arguments and the request-time variable-aware check
+use this same budget cutoff; permitted queries retain exact cost calculation.
+
 ## Rate limiting
 
 Per-field rate limiting already applies through
