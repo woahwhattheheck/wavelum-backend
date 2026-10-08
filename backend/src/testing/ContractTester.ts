@@ -317,7 +317,7 @@ export class ContractTester {
     // Validate content type
     if (responseContract.contentType) {
       const actualContentType = response.headers['content-type'];
-      if (!actualContentType?.includes(responseContract.contentType)) {
+      if (typeof actualContentType !== 'string' || !actualContentType.includes(responseContract.contentType)) {
         violations.push({
           type: 'content_type_mismatch',
           expected: responseContract.contentType,
@@ -458,7 +458,7 @@ export class ContractTester {
       if (actualType !== expectedType) {
         violations.push({
           type: 'type_mismatch',
-          expected,
+          expected: expectedType,
           actual: actualType,
           message: `${path} should be ${expectedType}, got ${actualType}`,
           severity: 'error',
@@ -527,7 +527,7 @@ export class ContractTester {
         }
         return 'sample-string';
       case 'number':
-        return contract.min !== undefined ? contract.min : 42;
+        return 'min' in contract && typeof contract.min === 'number' ? contract.min : 42;
       case 'boolean':
         return true;
       default:

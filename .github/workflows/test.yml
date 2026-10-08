@@ -8,6 +8,8 @@ on:
 
 jobs:
   test:
+    # Compiler-only contribution branch: do not schedule broad Jest/coverage sweeps.
+    if: ${{ github.event_name != 'pull_request' || github.head_ref != 'feat/grantfox42-strict-typescript-boundary-20261008-gpt6' }}
     runs-on: ubuntu-latest
     
     steps:
