@@ -10,7 +10,15 @@ const { depthLimitRule, costLimitRule, runtimeCostLimitPlugin } = require('../sr
 const schema = buildSchema(`
   type User { id: ID!, name: String, posts(first: Int): [Post], followers(first: Int): [User] }
   type Post { id: ID!, title: String, author: User }
-  type Query { user(id: ID!): User, users(first: Int): [User], post(id: ID!): Post }
+  input PaginationInput { first: Int = 50, last: Int }
+  type Query {
+    user(id: ID!): User
+    users(first: Int): [User]
+    post(id: ID!): Post
+    vestingHistory(pagination: PaginationInput): [Post]
+    claimHistory(pagination: PaginationInput): [Post]
+    searchVestingSchedules(pagination: PaginationInput): [Post]
+  }
   type Mutation { createPost(title: String!): Post }
 `);
 
@@ -121,6 +129,15 @@ describe('costLimitRule', () => {
     expect(errors(q, [rule()])).toEqual([]);
   });
 
+  it('prices nested PaginationInput literals on vesting connection fields', () => {
+    const leaves = Array.from({ length: 11 }, (_v, i) => 'p' + i + ': id').join(' ');
+    const expensive = '{ vestingHistory(pagination: { first: 100 }) { ' + leaves + ' } }';
+    expect(errors(expensive, [rule()])[0]).toMatch(/maximum query cost of 1000/);
+
+    const bounded = '{ claimHistory(pagination: { first: 10 }) { id } }';
+    expect(errors(bounded, [rule()])).toEqual([]);
+  });
+
   it('honors per-field cost overrides', () => {
     const pricey = costLimitRule({ maxCost: 10, fieldCosts: { users: 50 } });
     expect(errors('{ users { id } }', [pricey])[0]).toMatch(/estimated cost/);
@@ -174,6 +191,27 @@ describe('runtimeCostLimitPlugin', () => {
     // The cost guard can stop once this request is irreversibly over budget.
     expect(errs[0]).toMatch(/estimated cost: 1001/);
     await expect(runCostCheck(query, {})).rejects.toThrow(/maximum query cost of 1000/);
+  });
+
+  it('prices nested pagination object variables, nested scalar variables, and object defaults', async () => {
+    const objectVar =
+      'query Page($page: PaginationInput!) { vestingHistory(pagination: $page) { id } }';
+    expect(errors(objectVar, [costLimitRule({ maxCost: 1000 })])).toEqual([]);
+    await expect(runCostCheck(objectVar, { page: { first: 10 } })).resolves.toBeUndefined();
+    await expect(runCostCheck(objectVar, { page: { first: 600 } }))
+      .rejects.toThrow(/maximum query cost of 1000/);
+
+    const nestedScalar =
+      'query Page($count: Int!) { claimHistory(pagination: { first: $count }) { id } }';
+    await expect(runCostCheck(nestedScalar, { count: 10 })).resolves.toBeUndefined();
+    await expect(runCostCheck(nestedScalar, { count: 600 }))
+      .rejects.toThrow(/maximum query cost of 1000/);
+
+    const objectDefault =
+      'query Page($page: PaginationInput = { first: 600 }) { ' +
+      'searchVestingSchedules(pagination: $page) { id } }';
+    await expect(runCostCheck(objectDefault, {}))
+      .rejects.toThrow(/maximum query cost of 1000/);
   });
 
   it('honors default variable values but fails closed on missing list sizes', async () => {
