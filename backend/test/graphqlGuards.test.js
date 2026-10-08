@@ -37,6 +37,15 @@ describe('depthLimitRule', () => {
     expect(errs[0]).toMatch(/depth: 8/);
   });
 
+  it('rejects deeply nested queries at the first excess level', () => {
+    // A long but syntactically valid tree must be rejected before its
+    // remaining nested field selections are traversed.
+    const nested = 'posts { '.repeat(80) + 'id' + ' }'.repeat(80);
+    const result = errors('{ user { ' + nested + ' } }', [rule()]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatch(/depth: 8/);
+  });
+
   it('counts depth through fragment spreads', () => {
     const q = `
       { user { ...UserDeep } }
