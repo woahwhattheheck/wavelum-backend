@@ -40,7 +40,7 @@ export class Sep10AuthMiddleware {
             ? error.code
             : "authentication_error",
         message:
-          error && error.message
+          error instanceof Sep10AuthError
             ? error.message
             : "Unable to create SEP-10 challenge",
       });
@@ -69,7 +69,7 @@ export class Sep10AuthMiddleware {
             ? error.code
             : "authentication_error",
         message:
-          error && error.message
+          error instanceof Sep10AuthError
             ? error.message
             : "SEP-10 authentication failed",
       });
