@@ -333,6 +333,15 @@ function encryptedJsonField(fieldName) {
     get() {
       const raw = this.getDataValue(fieldName);
       if (raw === null || raw === undefined) return raw;
+      // The explicit $enc envelope means the field is encrypted, even if
+      // ciphertext is truncated/corrupted and no longer matches its grammar.
+      // Never reinterpret a damaged encrypted envelope as legacy plain JSON.
+      if (typeof raw === 'object' &&
+          Object.prototype.hasOwnProperty.call(raw, '$enc') &&
+          !isEncryptedField(raw.$enc)) {
+        audit({ op: 'decrypt', field: fieldName, error: 'failed' });
+        throw new EncryptionError('Stored encrypted field failed authentication or decoding');
+      }
       const encrypted = typeof raw === 'string' && isEncryptedField(raw)
         ? raw
         : typeof raw === 'object' && isEncryptedField(raw.$enc)
