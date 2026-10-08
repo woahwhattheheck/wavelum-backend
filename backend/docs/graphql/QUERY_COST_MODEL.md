@@ -21,6 +21,12 @@ An operation's estimated cost must not exceed **1000 points**:
   `pageSize`) multiply the cost of that field's whole subtree — e.g.
   `users(first: 600) { name posts { title } }` costs
   `(1 + 1 + (1 + 1)) * 600 = 2400`.
+- The vesting connection fields `vestingHistory`, `claimHistory`, and
+  `searchVestingSchedules` also price their nested `pagination: PaginationInput`
+  object. `first`/`last` contribute the list multiplier; if a pagination
+  object supplies neither bound, the schema's `first: 50` default is used.
+  Object literals are priced during validation, while object/scalar variables
+  and GraphQL variable defaults are re-priced in the request-time hook.
 - Field-level overrides can be registered in the `fieldCosts` map passed
   to `costLimitRule` for fields that are disproportionately expensive.
 - Fragment spreads count their cost at each usage site; recursive cycles
