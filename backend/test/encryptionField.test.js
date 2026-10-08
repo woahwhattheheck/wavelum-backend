@@ -184,6 +184,44 @@ describe('legacy compatibility', () => {
     expect(decryptField(json)).toBe('json form');
   });
 
+  it('round-trips the original authenticated empty-string legacy format', () => {
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv('aes-256-gcm', Buffer.from(LEGACY_KEY, 'hex'), iv);
+    const content = Buffer.concat([cipher.update('', 'utf8'), cipher.final()]);
+    const legacy = {
+      iv: iv.toString('hex'),
+      content: content.toString('hex'),
+      tag: cipher.getAuthTag().toString('hex'),
+    };
+
+    expect(legacy.content).toBe('');
+    expect(decryptField(legacy)).toBe('');
+    expect(decryptField(JSON.stringify(legacy))).toBe('');
+    expect(decryptField(rotateField(legacy))).toBe('');
+  });
+
+  it('rejects shortened legacy GCM tags and noncanonical hex inputs', () => {
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv('aes-256-gcm', Buffer.from(LEGACY_KEY, 'hex'), iv);
+    const content = Buffer.concat([cipher.update('private value', 'utf8'), cipher.final()]);
+    const legacy = {
+      iv: iv.toString('hex'),
+      content: content.toString('hex'),
+      tag: cipher.getAuthTag().toString('hex'),
+    };
+
+    for (const malformed of [
+      { ...legacy, tag: legacy.tag.slice(0, 8) }, // 4-byte genuine prefix
+      { ...legacy, tag: legacy.tag.slice(0, -1) },
+      { ...legacy, iv: legacy.iv.slice(0, -2) },
+      { ...legacy, iv: legacy.iv + 'z' },
+      { ...legacy, content: legacy.content + 'f' },
+    ]) {
+      expect(() => decryptField(malformed)).toThrow(EncryptionError);
+      expect(() => decryptField(JSON.stringify(malformed))).toThrow(EncryptionError);
+    }
+  });
+
   it('keeps encrypt()/decrypt() working for existing callers', () => {
     const payload = encrypt('compat');
     expect(decrypt(payload)).toBe('compat');
